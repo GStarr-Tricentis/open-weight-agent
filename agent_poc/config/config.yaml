@@ -1,0 +1,28 @@
+model:
+  provider: ollama
+  base_url: http://localhost:11434/v1
+  api_key: ollama
+  model_name: qwen2.5:7b
+  temperature: 0.0
+
+agent:
+  max_iterations: 20
+  tool_timeout_seconds: 30
+  repeated_call_window: 3
+
+tools:
+  static:
+    - filesystem
+    - shell
+    - python_exec
+
+mcp:
+  servers: []
+  # - name: my_server
+  #   command: uvx
+  #   args: ["mcp-server-filesystem", "/tmp"]
+
+sandbox:
+  timeout_seconds: 15
+  max_output_bytes: 65536
+  allow_network: false
