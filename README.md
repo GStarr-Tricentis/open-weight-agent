@@ -14,12 +14,28 @@ A synchronous tool-using agent that runs against any OpenAI-compatible local mod
 # Core only
 pip install -e .
 
+# With Streamlit UI
+pip install -e ".[ui]"
+
 # With MCP server support
 pip install -e ".[mcp]"
 
 # Development (includes pytest)
 pip install -e ".[dev,mcp]"
 ```
+
+## Streamlit UI
+
+A web UI that shows tool calls, per-call latency, and token counts after each run.
+
+```bash
+pip install -e ".[ui]"
+streamlit run ui/app.py
+```
+
+- **Left panel (70%)**: chat history and prompt input
+- **Right panel (30%)**: tool call cards with args, output, and elapsed time, plus a run summary (iterations, finish reason, wall time, token counts)
+- Model dropdown populated from `ollama list`
 
 ## Quick start
 
