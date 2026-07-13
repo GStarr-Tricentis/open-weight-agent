@@ -93,18 +93,18 @@ One row per `query × model × rep`:
 
 ```bash
 ollama pull qwen2.5:7b
-python -m agent_poc.main --prompt "list the files in the current directory"
+python main.py --prompt "list the files in the current directory"
 ```
 
 Interactive mode (no `--prompt`):
 ```bash
-python -m agent_poc.main
+python main.py
 > what is 2 + 2?
 ```
 
 Override model without editing config:
 ```bash
-python -m agent_poc.main --model llama3.1:8b --prompt "hello"
+python main.py --model qwen3:8b --prompt "hello"
 ```
 
 ## Tested models
@@ -122,13 +122,13 @@ python -m agent_poc.main --model llama3.1:8b --prompt "hello"
 ### Demo 1 — File Q&A
 ```bash
 echo -e "Paris\nTokyo\nNairobi\nSydney" > cities.txt
-python -m agent_poc.main --prompt "Read cities.txt and tell me how many cities are listed"
+python main.py --prompt "Read cities.txt and tell me how many cities are listed"
 ```
 Agent calls `read_file`, then answers from the content.
 
 ### Demo 2 — Python computation
 ```bash
-python -m agent_poc.main --prompt "Use python_exec to compute the sum of the first 100 natural numbers"
+python main.py --prompt "Use python_exec to compute the sum of the first 100 natural numbers"
 ```
 Agent writes and runs Python code, reads the output (`5050`), reports the answer.
 
@@ -142,7 +142,7 @@ mcp:
       args: ["mcp-server-filesystem", "/tmp"]
 ```
 ```bash
-python -m agent_poc.main --prompt "list tools available"
+python main.py --prompt "list tools available"
 ```
 MCP tools appear alongside static tools; the agent can invoke them.
 
@@ -152,7 +152,7 @@ cat > sample.dat << 'EOF'
 ##name=Alice;age=30;city=NYC
 ##name=Bob;age=25;city=LA
 EOF
-python -m agent_poc.main --prompt "Parse sample.dat — each line starts with ## and fields are separated by ; in key=value format. How many records are there and what are the names?"
+python main.py --prompt "Parse sample.dat — each line starts with ## and fields are separated by ; in key=value format. How many records are there and what are the names?"
 ```
 Agent reads the file, recognises the format, writes a parser with `python_exec`, iterates on errors, and reports the result.
 
