@@ -68,12 +68,20 @@ class SandboxConfig(BaseModel):
     allow_network: bool = False
 
 
+class GraphPipelineConfig(BaseModel):
+    context_dir: str = "context/"
+    default_sample_size: int = 50
+    default_batch_size: int = 500
+    default_model: str = "qwen3:8b"
+
+
 class AgentPocConfig(BaseModel):
     model: ModelConfig
     agent: AgentCoreConfig
     tools: ToolsConfig
     mcp: MCPConfig = MCPConfig()
     sandbox: SandboxConfig = SandboxConfig()
+    graph_pipeline: GraphPipelineConfig = GraphPipelineConfig()
 
 
 def load_config(path: str | Path) -> AgentPocConfig:

@@ -30,6 +30,13 @@ htmlcov/
 .vscode/
 *.swp
 
+# Generated graph pipeline context (runtime artifacts, not code)
+context/datasets/
+context/shared_context.yaml
+
+# Large test data files
+test_data/dump-all-v3.jsonl
+
 # Benchmark outputs
-*_results.csv
+results*.csv
 benchmark_results.csv

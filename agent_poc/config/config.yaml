@@ -2,7 +2,7 @@ model:
   provider: ollama
   base_url: http://localhost:11434/v1
   api_key: ollama
-  model_name: qwen2.5:7b
+  model_name: qwen3:8b
   temperature: 0.0
 
 agent:
@@ -17,17 +17,22 @@ tools:
     - python_exec
 
 mcp:
-  servers: []
-  # Example — neo4j MCP server:
-  # - name: neo4j
-  #   command: /usr/local/bin/neo4j-mcp
-  #   args: []
-  #   env:
-  #     NEO4J_URI: bolt://localhost:7687
-  #     NEO4J_USERNAME: neo4j
-  #     NEO4J_PASSWORD: "${NEO4J_PASSWORD}"  # set in .env file
+  servers:
+    - name: neo4j
+      command: /usr/local/bin/neo4j-mcp
+      args: []
+      env:
+        NEO4J_URI: "${NEO4J_URI}"
+        NEO4J_USERNAME: "${NEO4J_USERNAME}"
+        NEO4J_PASSWORD: "${NEO4J_PASSWORD}"
 
 sandbox:
   timeout_seconds: 15
   max_output_bytes: 65536
   allow_network: false
+
+graph_pipeline:
+  context_dir: context/
+  default_sample_size: 50
+  default_batch_size: 500
+  default_model: qwen3:8b

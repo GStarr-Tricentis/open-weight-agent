@@ -1,0 +1,53 @@
+You are building a Neo4j knowledge graph from a structured dataset export.
+
+The node types have already been decided. Your job is to identify relationships between them.
+
+NODE TYPES ALREADY DECIDED:
+{node_types_json}
+
+DATASET STRUCTURE SUMMARY:
+{structure_summary}
+
+SAMPLE RECORDS (pay attention to the "associations" and "details" fields):
+{sample_records_json}
+
+TASK — return a JSON object with two keys:
+
+1. "relationship_types": explicit edges from the "associations" array in the data.
+   Each association has an "edgeName" field. Map each edgeName to a SCREAMING_SNAKE_CASE relationship type.
+   Example: {{"name": "covers", "maps_to": "COVERS", "from": "TestCase", "to": "Requirement"}}
+
+2. "implicit_relationships": foreign key references embedded in record fields (e.g. a field ending in "UniqueId" or "Id" that points to another node).
+   Example: {{"description": "test step references a module", "pattern": "step_uses_module", "edge_name": "moduleUniqueId", "maps_to": "USES_MODULE", "cross_dataset": false, "target_dataset_id": null}}
+
+Return ONLY this JSON object — no explanation, no markdown, no extra text:
+
+{{
+  "relationship_types": [
+    {{"name": "<edgeName from associations>", "maps_to": "<SCREAMING_SNAKE_CASE>", "from": "<from node label>", "to": "<to node label>"}}
+  ],
+  "implicit_relationships": [
+    {{"description": "<what this FK means>", "pattern": "<short_snake_case_name>", "edge_name": "<field name>", "maps_to": "<SCREAMING_SNAKE_CASE>", "cross_dataset": false, "target_dataset_id": null}}
+  ]
+}}
+
+---
+ASSOCIATION ARRAY CONFIG — if the data has an explicit list of edges on each record,
+add an "association_config" key to the returned JSON object describing its structure:
+
+  "association_config": {{
+    "array_field": "<field name of the edge list, e.g. 'associations', 'links', 'edges', 'relationships'>",
+    "edge_name_subfield": "<field within each edge object that names the relationship type, e.g. 'edgeName', 'rel', 'type'>",
+    "partner_id_subfield": "<field within each edge object that holds the partner record's ID>",
+    "direction_subfield": "<field encoding edge direction ('in'/'out'), or null if always outbound>",
+    "direction_default": "out"
+  }}
+
+Set association_config to null if no such edge array exists in the data.
+---
+
+Rules:
+- Only include edgeNames that actually appear in the sample associations arrays
+- "from" and "to" must be canonical labels from NODE TYPES ALREADY DECIDED
+- If you see no associations and no FK fields, return empty arrays — do not invent relationships
+- Use SCREAMING_SNAKE_CASE for all maps_to values

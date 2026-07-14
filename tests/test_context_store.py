@@ -1,0 +1,384 @@
+"""Tests for graph_pipeline/context_store.py.
+
+Run with: pytest tests/test_context_store.py
+"""
+import os
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+def make_dataset_ctx(
+    dataset_id="ds1",
+    source_file="ds1.jsonl",
+    node_types=None,
+    relationship_types=None,
+    implicit_relationships=None,
+    design_decisions=None,
+):
+    from graph_pipeline.context_store import (
+        DatasetContext,
+        DatasetNodeType,
+        DatasetRelationshipType,
+    )
+
+    return DatasetContext(
+        dataset_id=dataset_id,
+        source_file=source_file,
+        node_types=node_types or [],
+        relationship_types=relationship_types or [],
+        implicit_relationships=implicit_relationships or [],
+        design_decisions=design_decisions or [],
+    )
+
+
+def make_node_type(name, maps_to, identity_key="uniqueId"):
+    from graph_pipeline.context_store import DatasetNodeType
+    return DatasetNodeType(name=name, maps_to=maps_to, identity_key=identity_key)
+
+
+def make_rel_type(name, maps_to, from_type, to_type):
+    from graph_pipeline.context_store import DatasetRelationshipType
+    return DatasetRelationshipType(
+        name=name, maps_to=maps_to, from_type=from_type, to_type=to_type
+    )
+
+
+# ---------------------------------------------------------------------------
+# SharedContext / DatasetContext models
+# ---------------------------------------------------------------------------
+
+class TestModels:
+    def test_shared_context_empty_defaults(self):
+        from graph_pipeline.context_store import SharedContext
+        sc = SharedContext()
+        assert sc.version == 0
+        assert sc.node_types == []
+        assert sc.relationship_types == []
+        assert sc.structural_patterns == []
+
+    def test_dataset_context_fields(self):
+        ctx = make_dataset_ctx(
+            dataset_id="meap",
+            source_file="dump.jsonl",
+            node_types=[make_node_type("TestCase", "TestCase")],
+        )
+        assert ctx.dataset_id == "meap"
+        assert ctx.source_file == "dump.jsonl"
+        assert len(ctx.node_types) == 1
+        assert ctx.node_types[0].name == "TestCase"
+        assert ctx.node_types[0].maps_to == "TestCase"
+
+    def test_implicit_relationship_fields(self):
+        from graph_pipeline.context_store import ImplicitRelationship
+        ir = ImplicitRelationship(
+            description="associations[].edgeName='Module' → USES_MODULE",
+            pattern="associations_edge",
+            edge_name="Module",
+            maps_to="USES_MODULE",
+            cross_dataset=False,
+            target_dataset_id=None,
+        )
+        assert ir.cross_dataset is False
+        assert ir.target_dataset_id is None
+
+    def test_design_decision_fields(self):
+        from graph_pipeline.context_store import DesignDecision
+        dd = DesignDecision(
+            question="Nodes or properties?",
+            decision="nodes",
+            rationale="They have uniqueIds",
+        )
+        assert dd.decision == "nodes"
+
+
+# ---------------------------------------------------------------------------
+# load_shared_context — missing file
+# ---------------------------------------------------------------------------
+
+class TestLoadSharedContext:
+    def test_missing_file_returns_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GRAPH_PIPELINE_CONTEXT_DIR", str(tmp_path))
+        from graph_pipeline import context_store
+        # reload so env var is picked up
+        import importlib; importlib.reload(context_store)
+        sc = context_store.load_shared_context()
+        assert sc.version == 0
+        assert sc.node_types == []
+        assert sc.relationship_types == []
+
+    def test_existing_file_loads(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GRAPH_PIPELINE_CONTEXT_DIR", str(tmp_path))
+        import importlib
+        from graph_pipeline import context_store
+        importlib.reload(context_store)
+
+        yaml_content = """\
+version: 2
+updated_at: "2026-01-01"
+node_types:
+  - name: TestCase
+    description: "A test procedure"
+    identity_key: uniqueId
+    source_datasets: [meap]
+relationship_types: []
+structural_patterns: []
+"""
+        (tmp_path / "shared_context.yaml").write_text(yaml_content)
+        sc = context_store.load_shared_context()
+        assert sc.version == 2
+        assert len(sc.node_types) == 1
+        assert sc.node_types[0].name == "TestCase"
+        assert sc.node_types[0].source_datasets == ["meap"]
+
+
+# ---------------------------------------------------------------------------
+# load_dataset_context / save_dataset_context
+# ---------------------------------------------------------------------------
+
+class TestDatasetContextIO:
+    def test_missing_returns_none(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GRAPH_PIPELINE_CONTEXT_DIR", str(tmp_path))
+        import importlib
+        from graph_pipeline import context_store
+        importlib.reload(context_store)
+        assert context_store.load_dataset_context("nonexistent") is None
+
+    def test_round_trip(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GRAPH_PIPELINE_CONTEXT_DIR", str(tmp_path))
+        import importlib
+        from graph_pipeline import context_store
+        importlib.reload(context_store)
+
+        ctx = make_dataset_ctx(
+            dataset_id="meap",
+            source_file="dump.jsonl",
+            node_types=[make_node_type("TestCase", "TestCase")],
+        )
+        context_store.save_dataset_context(ctx)
+        loaded = context_store.load_dataset_context("meap")
+        assert loaded is not None
+        assert loaded.dataset_id == "meap"
+        assert loaded.node_types[0].maps_to == "TestCase"
+
+    def test_save_creates_directory(self, tmp_path, monkeypatch):
+        # datasets/ sub-directory does not exist yet
+        monkeypatch.setenv("GRAPH_PIPELINE_CONTEXT_DIR", str(tmp_path))
+        import importlib
+        from graph_pipeline import context_store
+        importlib.reload(context_store)
+
+        ctx = make_dataset_ctx(dataset_id="new_ds")
+        context_store.save_dataset_context(ctx)
+        assert (tmp_path / "datasets" / "new_ds.yaml").exists()
+
+
+# ---------------------------------------------------------------------------
+# merge_into_shared — clean new type
+# ---------------------------------------------------------------------------
+
+class TestMergeNewType:
+    def _reload(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GRAPH_PIPELINE_CONTEXT_DIR", str(tmp_path))
+        import importlib
+        from graph_pipeline import context_store
+        importlib.reload(context_store)
+        return context_store
+
+    def test_new_node_type_appended(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx = make_dataset_ctx(
+            dataset_id="ds1",
+            node_types=[make_node_type("TestCase", "TestCase")],
+        )
+        merged = cs.merge_into_shared(ctx)
+        assert len(merged.node_types) == 1
+        assert merged.node_types[0].name == "TestCase"
+        assert "ds1" in merged.node_types[0].source_datasets
+
+    def test_version_incremented(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx = make_dataset_ctx(node_types=[make_node_type("TestCase", "TestCase")])
+        merged = cs.merge_into_shared(ctx)
+        assert merged.version == 1  # started at 0, incremented to 1
+
+    def test_updated_at_set_to_today(self, tmp_path, monkeypatch):
+        import datetime
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx = make_dataset_ctx(node_types=[make_node_type("TestCase", "TestCase")])
+        merged = cs.merge_into_shared(ctx)
+        assert merged.updated_at == str(datetime.date.today())
+
+    def test_new_relationship_type_appended(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx = make_dataset_ctx(
+            dataset_id="ds1",
+            relationship_types=[make_rel_type("covers", "COVERS", "TestCase", "Requirement")],
+        )
+        merged = cs.merge_into_shared(ctx)
+        assert len(merged.relationship_types) == 1
+        assert merged.relationship_types[0].name == "covers"
+        assert merged.relationship_types[0].maps_to == "COVERS"
+        assert "ds1" in merged.relationship_types[0].source_datasets
+
+    def test_merge_persists_to_disk(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx = make_dataset_ctx(node_types=[make_node_type("TestCase", "TestCase")])
+        cs.merge_into_shared(ctx)
+        # reload from disk to confirm persistence
+        import importlib; importlib.reload(cs)
+        sc = cs.load_shared_context()
+        assert sc.version == 1
+
+
+# ---------------------------------------------------------------------------
+# merge_into_shared — same source name, same canonical (no-op / dedup)
+# ---------------------------------------------------------------------------
+
+class TestMergeSameType:
+    def _reload(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GRAPH_PIPELINE_CONTEXT_DIR", str(tmp_path))
+        import importlib
+        from graph_pipeline import context_store
+        importlib.reload(context_store)
+        return context_store
+
+    def test_same_canonical_no_duplicate_node(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx1 = make_dataset_ctx(
+            dataset_id="ds1",
+            node_types=[make_node_type("TestCase", "TestCase")],
+        )
+        ctx2 = make_dataset_ctx(
+            dataset_id="ds2",
+            node_types=[make_node_type("TestCase", "TestCase")],
+        )
+        cs.merge_into_shared(ctx1)
+        merged = cs.merge_into_shared(ctx2)
+        assert len(merged.node_types) == 1  # still just one entry
+
+    def test_same_canonical_source_dataset_appended(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx1 = make_dataset_ctx(
+            dataset_id="ds1",
+            node_types=[make_node_type("TestCase", "TestCase")],
+        )
+        ctx2 = make_dataset_ctx(
+            dataset_id="ds2",
+            node_types=[make_node_type("TestCase", "TestCase")],
+        )
+        cs.merge_into_shared(ctx1)
+        merged = cs.merge_into_shared(ctx2)
+        assert set(merged.node_types[0].source_datasets) == {"ds1", "ds2"}
+
+    def test_version_still_increments_on_dedup(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx1 = make_dataset_ctx(
+            dataset_id="ds1",
+            node_types=[make_node_type("TestCase", "TestCase")],
+        )
+        ctx2 = make_dataset_ctx(
+            dataset_id="ds2",
+            node_types=[make_node_type("TestCase", "TestCase")],
+        )
+        cs.merge_into_shared(ctx1)
+        merged = cs.merge_into_shared(ctx2)
+        assert merged.version == 2
+
+    def test_same_dataset_id_not_duplicated_in_source_datasets(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx = make_dataset_ctx(
+            dataset_id="ds1",
+            node_types=[make_node_type("TestCase", "TestCase")],
+        )
+        cs.merge_into_shared(ctx)
+        merged = cs.merge_into_shared(ctx)  # same dataset, same type, re-ingested
+        assert merged.node_types[0].source_datasets.count("ds1") == 1
+
+
+# ---------------------------------------------------------------------------
+# merge_into_shared — conflict: same source name, different canonical
+# ---------------------------------------------------------------------------
+
+class TestMergeConflict:
+    def _reload(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GRAPH_PIPELINE_CONTEXT_DIR", str(tmp_path))
+        import importlib
+        from graph_pipeline import context_store
+        importlib.reload(context_store)
+        return context_store
+
+    def test_conflict_raises(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx1 = make_dataset_ctx(
+            dataset_id="ds1",
+            node_types=[make_node_type("ReuseableTestStepBlock", "ReusableStep")],
+        )
+        ctx2 = make_dataset_ctx(
+            dataset_id="ds2",
+            node_types=[make_node_type("ReuseableTestStepBlock", "ReuseableBlock")],
+        )
+        cs.merge_into_shared(ctx1)
+        with pytest.raises(cs.MergeConflict):
+            cs.merge_into_shared(ctx2)
+
+    def test_conflict_fields_correct(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx1 = make_dataset_ctx(
+            dataset_id="ds1",
+            node_types=[make_node_type("ReuseableTestStepBlock", "ReusableStep")],
+        )
+        ctx2 = make_dataset_ctx(
+            dataset_id="ds2",
+            node_types=[make_node_type("ReuseableTestStepBlock", "ReuseableBlock")],
+        )
+        cs.merge_into_shared(ctx1)
+        with pytest.raises(cs.MergeConflict) as exc_info:
+            cs.merge_into_shared(ctx2)
+        conflict = exc_info.value
+        assert conflict.source_name == "ReuseableTestStepBlock"
+        assert conflict.existing_canonical == "ReusableStep"
+        assert conflict.proposed_canonical == "ReuseableBlock"
+        assert conflict.existing_dataset == "ds1"
+        assert conflict.new_dataset == "ds2"
+        assert conflict.type == "node"
+
+    def test_relationship_conflict_raises(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx1 = make_dataset_ctx(
+            dataset_id="ds1",
+            relationship_types=[make_rel_type("covers", "COVERS", "TestCase", "Requirement")],
+        )
+        ctx2 = make_dataset_ctx(
+            dataset_id="ds2",
+            relationship_types=[make_rel_type("covers", "COVERS_REQ", "TestCase", "Requirement")],
+        )
+        cs.merge_into_shared(ctx1)
+        with pytest.raises(cs.MergeConflict) as exc_info:
+            cs.merge_into_shared(ctx2)
+        conflict = exc_info.value
+        assert conflict.type == "relationship"
+        assert conflict.source_name == "covers"
+        assert conflict.existing_canonical == "COVERS"
+        assert conflict.proposed_canonical == "COVERS_REQ"
+
+    def test_conflict_does_not_mutate_shared(self, tmp_path, monkeypatch):
+        cs = self._reload(tmp_path, monkeypatch)
+        ctx1 = make_dataset_ctx(
+            dataset_id="ds1",
+            node_types=[make_node_type("ReuseableTestStepBlock", "ReusableStep")],
+        )
+        ctx2 = make_dataset_ctx(
+            dataset_id="ds2",
+            node_types=[make_node_type("ReuseableTestStepBlock", "ReuseableBlock")],
+        )
+        cs.merge_into_shared(ctx1)
+        with pytest.raises(cs.MergeConflict):
+            cs.merge_into_shared(ctx2)
+        # shared context on disk must be unchanged (version still 1, not 2)
+        import importlib; importlib.reload(cs)
+        sc = cs.load_shared_context()
+        assert sc.version == 1
+        assert sc.node_types[0].maps_to == "ReusableStep"

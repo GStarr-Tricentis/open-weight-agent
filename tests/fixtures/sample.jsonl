@@ -1,0 +1,4 @@
+{"kind": "export-dump-header", "version": "1.0", "exportedAt": "2026-01-01"}
+{"uniqueId": "abc123", "typeName": "TestCase", "name": "Login Test", "nodePath": "Root/Suite A/Login Test"}
+{"uniqueId": "def456", "typeName": "XModule", "name": "Login Module", "nodePath": "Root/Modules/Login Module"}
+{"uniqueId": "ghi789", "typeName": "TestCase", "name": "Logout Test", "nodePath": "Root/Suite A/Logout Test"}

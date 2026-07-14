@@ -1,0 +1,390 @@
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+
+from graph_pipeline.context_store import DatasetContext, HierarchyConfig, SharedContext
+from graph_pipeline.models import ExtractionSource, Node, Relationship
+
+logger = logging.getLogger(__name__)
+
+_ENTITY_EXTRACTION_PROMPT = Path(__file__).parent / "prompts" / "entity_extraction.txt"
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _get_nested(record: dict, dot_path: str):
+    """Resolve a dot-separated path into a nested dict, e.g. 'a.b.c' → record['a']['b']['c'].
+    Returns None if any segment is missing or not a dict."""
+    parts = dot_path.split(".")
+    current = record
+    for part in parts:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def _scalar_properties(record: dict) -> dict:
+    """Return only scalar (non-dict, non-list) fields."""
+    return {
+        k: v
+        for k, v in record.items()
+        if not isinstance(v, (dict, list))
+    }
+
+
+def _node_type_map(dataset_ctx: DatasetContext) -> dict[str, str]:
+    return {nt.name: nt.maps_to for nt in dataset_ctx.node_types}
+
+
+def _rel_type_map(dataset_ctx: DatasetContext) -> dict[str, str]:
+    return {rt.name: rt.maps_to for rt in dataset_ctx.relationship_types}
+
+
+def _rel_label_map(dataset_ctx: DatasetContext) -> dict[str, tuple[str, str]]:
+    return {rt.name: (rt.from_type, rt.to_type) for rt in dataset_ctx.relationship_types}
+
+
+# ---------------------------------------------------------------------------
+# Rules 3 + 4 helpers: path field → phantom nodes + hierarchy edges
+# ---------------------------------------------------------------------------
+
+def _build_hierarchy_structures(
+    records: list[dict],
+    config: HierarchyConfig,
+    id_field: str,
+    dataset_id: str,
+    explicit_nodes_by_name: dict[str, Node],
+) -> tuple[dict[str, Node], list[Relationship]]:
+    """
+    Parse all path values across records using config.field and config.separator.
+
+    Returns:
+        phantom_nodes: id → Node for each phantom node created
+        hierarchy_rels: all hierarchy relationships derived from paths
+    """
+    phantom_nodes: dict[str, Node] = {}
+    hierarchy_rels: list[Relationship] = []
+
+    def _resolve_segment(segment: str, record: dict | None = None) -> tuple[str, str]:
+        """Return (node_id, node_label) for a path segment."""
+        if record is not None:
+            return f"{dataset_id}:{record.get(id_field, '')}", "leaf"
+
+        explicit = explicit_nodes_by_name.get(segment)
+        if explicit:
+            return explicit.id, explicit.label
+
+        phantom_id = f"{dataset_id}:path:{segment}"
+        if phantom_id not in phantom_nodes:
+            phantom_nodes[phantom_id] = Node(
+                id=phantom_id,
+                label=config.phantom_label,
+                properties={"name": segment},
+                source_record_id="",
+                extraction_source=ExtractionSource.PHANTOM,
+            )
+        return phantom_id, config.phantom_label
+
+    for record in records:
+        path = record.get(config.field, "")
+        if not path:
+            continue
+        segments = [s.strip() for s in path.split(config.separator) if s.strip()]
+        if len(segments) < 2:
+            continue
+
+        for i in range(len(segments) - 1):
+            parent_seg = segments[i]
+            child_seg = segments[i + 1]
+            is_leaf = (i + 1 == len(segments) - 1)
+
+            parent_id, parent_label = _resolve_segment(parent_seg)
+            if is_leaf:
+                child_id = f"{dataset_id}:{record.get(id_field, '')}"
+                leaf_explicit = next(
+                    (n for n in explicit_nodes_by_name.values() if n.id == child_id), None
+                )
+                child_label = leaf_explicit.label if leaf_explicit else config.phantom_label
+            else:
+                child_id, child_label = _resolve_segment(child_seg)
+
+            hierarchy_rels.append(
+                Relationship(
+                    from_id=parent_id,
+                    to_id=child_id,
+                    from_label=parent_label,
+                    to_label=child_label,
+                    type=config.edge_type,
+                    properties={},
+                    source_record_id=record.get(id_field, ""),
+                    extraction_source=ExtractionSource.RULE_BASED,
+                )
+            )
+
+    return phantom_nodes, hierarchy_rels
+
+
+# ---------------------------------------------------------------------------
+# Rule 7: LLM-assisted extraction for ambiguous fields
+# ---------------------------------------------------------------------------
+
+def _llm_extract_ambiguous(
+    records: list[dict],
+    dataset_ctx: DatasetContext,
+    type_map: dict[str, str],
+    ollama_base_url: str,
+    model: str,
+) -> tuple[list[Node], list[Relationship]]:
+    """Call the LLM once per ambiguous record; mark results LLM_INFERRED."""
+    try:
+        from openai import OpenAI
+    except ImportError:
+        logger.warning("openai not installed; skipping LLM extraction")
+        return [], []
+
+    template = _ENTITY_EXTRACTION_PROMPT.read_text(encoding="utf-8")
+    client = OpenAI(base_url=ollama_base_url, api_key="ollama")
+    dataset_id = dataset_ctx.dataset_id
+    ambiguous = dataset_ctx.ambiguous_fields
+    id_field = dataset_ctx.id_field
+
+    llm_nodes: list[Node] = []
+    llm_rels: list[Relationship] = []
+
+    for record in records:
+        if not any(f in record for f in ambiguous):
+            continue
+
+        type_name = record.get(dataset_ctx.type_field, "")
+        label = type_map.get(type_name, type_name)
+        prompt = template.format(
+            dataset_id=dataset_id,
+            label=label,
+            id_field=id_field,
+            record_json=json.dumps(record, indent=2, ensure_ascii=False),
+            ambiguous_fields=", ".join(ambiguous),
+        )
+
+        raw = ""
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = resp.choices[0].message.content or ""
+            text = raw.strip()
+            if text.startswith("```"):
+                lines = text.splitlines()
+                text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+            data = json.loads(text)
+        except Exception as exc:
+            logger.warning("LLM extraction failed for record %s: %s", record.get(id_field), exc)
+            continue
+
+        for n in data.get("nodes", []):
+            llm_nodes.append(
+                Node(
+                    id=n["id"],
+                    label=n["label"],
+                    properties=n.get("properties", {}),
+                    source_record_id=n.get("source_record_id", record.get(id_field, "")),
+                    extraction_source=ExtractionSource.LLM_INFERRED,
+                )
+            )
+        for r in data.get("relationships", []):
+            llm_rels.append(
+                Relationship(
+                    from_id=r["from_id"],
+                    to_id=r["to_id"],
+                    from_label=r["from_label"],
+                    to_label=r["to_label"],
+                    type=r["type"],
+                    properties=r.get("properties", {}),
+                    source_record_id=r.get("source_record_id", record.get(id_field, "")),
+                    extraction_source=ExtractionSource.LLM_INFERRED,
+                )
+            )
+
+    return llm_nodes, llm_rels
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def extract_all(
+    records: list[dict],
+    dataset_ctx: DatasetContext,
+    shared_ctx: SharedContext | None,
+    ollama_base_url: str = "http://localhost:11434/v1",
+    model: str = "qwen3:8b",
+) -> tuple[list[Node], list[Relationship]]:
+    """Apply all extraction rules in order. Returns (nodes, relationships)."""
+    dataset_id = dataset_ctx.dataset_id
+    id_field = dataset_ctx.id_field
+    type_field = dataset_ctx.type_field
+    type_map = _node_type_map(dataset_ctx)
+    rel_map = _rel_type_map(dataset_ctx)
+    rel_label_map = _rel_label_map(dataset_ctx)
+
+    all_nodes: list[Node] = []
+    all_rels: list[Relationship] = []
+
+    # ----- Rule 1: id_field + type_field → Node --------------------------------
+    for record in records:
+        uid = record.get(id_field)
+        type_name = record.get(type_field)
+        if not uid or not type_name:
+            continue
+        label = type_map.get(type_name, type_name)
+        all_nodes.append(
+            Node(
+                id=f"{dataset_id}:{uid}",
+                label=label,
+                properties=_scalar_properties(record),
+                source_record_id=uid,
+                extraction_source=ExtractionSource.RULE_BASED,
+            )
+        )
+
+    # ----- Rule 2: nested_collections → child nodes + edges -------------------
+    for record in records:
+        parent_uid = record.get(id_field)
+        parent_type = record.get(type_field)
+        if not parent_uid:
+            continue
+        parent_label = type_map.get(parent_type, parent_type) if parent_type else ""
+
+        for nc in dataset_ctx.nested_collections:
+            items = _get_nested(record, nc.field)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                child_uid = item.get(nc.id_field)
+                if not child_uid:
+                    continue
+                all_nodes.append(
+                    Node(
+                        id=f"{dataset_id}:{child_uid}",
+                        label=nc.child_label,
+                        properties={k: v for k, v in item.items() if not isinstance(v, (dict, list))},
+                        source_record_id=parent_uid,
+                        extraction_source=ExtractionSource.RULE_BASED,
+                    )
+                )
+                all_rels.append(
+                    Relationship(
+                        from_id=f"{dataset_id}:{parent_uid}",
+                        to_id=f"{dataset_id}:{child_uid}",
+                        from_label=parent_label,
+                        to_label=nc.child_label,
+                        type=nc.edge_type,
+                        properties={},
+                        source_record_id=parent_uid,
+                        extraction_source=ExtractionSource.RULE_BASED,
+                    )
+                )
+
+    # ----- Rules 3 + 4: path hierarchy → phantom nodes + hierarchy edges ------
+    if dataset_ctx.hierarchy_config is not None:
+        explicit_by_name: dict[str, Node] = {}
+        for node in all_nodes:
+            name = node.properties.get("name")
+            if name:
+                explicit_by_name[name] = node
+
+        phantom_nodes, hierarchy_rels = _build_hierarchy_structures(
+            records, dataset_ctx.hierarchy_config, id_field, dataset_id, explicit_by_name
+        )
+        all_nodes.extend(phantom_nodes.values())
+        all_rels.extend(hierarchy_rels)
+
+    # ----- Rule 5: association array → explicit edges -------------------------
+    ac = dataset_ctx.association_config
+    if ac is not None:
+        for record in records:
+            this_uid = record.get(id_field)
+            this_type = record.get(type_field)
+            if not this_uid:
+                continue
+            this_label = type_map.get(this_type, this_type) if this_type else ""
+            this_id = f"{dataset_id}:{this_uid}"
+
+            for assoc in record.get(ac.array_field, []):
+                edge_name = assoc.get(ac.edge_name_subfield, "")
+                partner_id_raw = assoc.get(ac.partner_id_subfield)
+                if ac.direction_subfield:
+                    direction = assoc.get(ac.direction_subfield, ac.direction_default)
+                else:
+                    direction = ac.direction_default
+
+                if partner_id_raw is None or str(partner_id_raw).strip() == "":
+                    continue
+
+                canonical_type = rel_map.get(edge_name)
+                if not canonical_type:
+                    continue
+
+                from_label, to_label = rel_label_map.get(edge_name, ("", ""))
+                partner_id = f"{dataset_id}:{partner_id_raw}"
+
+                if direction == "out":
+                    from_id, to_id = this_id, partner_id
+                else:
+                    from_id, to_id = partner_id, this_id
+
+                all_rels.append(
+                    Relationship(
+                        from_id=from_id,
+                        to_id=to_id,
+                        from_label=from_label,
+                        to_label=to_label,
+                        type=canonical_type,
+                        properties={},
+                        source_record_id=this_uid,
+                        extraction_source=ExtractionSource.RULE_BASED,
+                    )
+                )
+
+    # ----- Rule 6: implicit foreign keys -------------------------------------
+    for ir in dataset_ctx.implicit_relationships:
+        fk_field = ir.edge_name
+        rel_type = ir.maps_to
+        target_ds = ir.target_dataset_id if ir.cross_dataset else dataset_id
+
+        for record in records:
+            this_uid = record.get(id_field)
+            this_type = record.get(type_field)
+            fk_value = record.get(fk_field)
+            if not this_uid or fk_value is None:
+                continue
+            this_label = type_map.get(this_type, this_type) if this_type else ""
+
+            all_rels.append(
+                Relationship(
+                    from_id=f"{dataset_id}:{this_uid}",
+                    to_id=f"{target_ds}:{fk_value}",
+                    from_label=this_label,
+                    to_label="",
+                    type=rel_type,
+                    properties={},
+                    source_record_id=this_uid,
+                    extraction_source=ExtractionSource.RULE_BASED,
+                )
+            )
+
+    # ----- Rule 7: LLM-assisted extraction for ambiguous fields --------------
+    if dataset_ctx.ambiguous_fields:
+        llm_nodes, llm_rels = _llm_extract_ambiguous(
+            records, dataset_ctx, type_map, ollama_base_url, model
+        )
+        all_nodes.extend(llm_nodes)
+        all_rels.extend(llm_rels)
+
+    return all_nodes, all_rels

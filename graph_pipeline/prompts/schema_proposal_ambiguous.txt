@@ -1,0 +1,28 @@
+You are building a Neo4j knowledge graph from a structured dataset export.
+
+Node types and relationships have already been decided. Your job is to identify fields whose
+values are unstructured or semi-structured text that may contain implicit references to entities
+or relationships not captured by the explicit schema rules.
+
+DATASET STRUCTURE SUMMARY:
+{structure_summary}
+
+SAMPLE RECORDS:
+{sample_records_json}
+
+TASK:
+Identify field names whose values could yield additional nodes or relationships if examined
+by an LLM on a per-record basis. Good candidates are:
+- Free-text fields (descriptions, notes, comments, tags, summaries)
+- Delimited lists of names/identifiers stored as a string
+- Fields whose values sometimes look like entity references but are not a clean foreign key
+
+Return ONLY a JSON array of field name strings — no explanation, no markdown, no extra text:
+
+["fieldName1", "fieldName2"]
+
+Rules:
+- Only include fields that actually appear in the sample records
+- Do NOT include fields that are already clean foreign keys (ending in "Id", "UniqueId")
+- Do NOT include fields that are simple enums or booleans
+- Return an empty array [] if no ambiguous fields exist

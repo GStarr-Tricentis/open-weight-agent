@@ -1,0 +1,201 @@
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+
+from graph_pipeline.cypher_generator import (
+    generate_constraint_statements,
+    generate_node_merge,
+    generate_relationship_merge,
+)
+from graph_pipeline.models import Node, Relationship
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Result dataclass
+# ---------------------------------------------------------------------------
+
+@dataclass
+class WriteResult:
+    nodes_created: int = 0
+    nodes_matched: int = 0
+    relationships_created: int = 0
+    relationships_matched: int = 0
+    errors: list[str] = field(default_factory=list)
+
+    def merge(self, other: WriteResult) -> None:
+        """Accumulate counts from another WriteResult into this one."""
+        self.nodes_created += other.nodes_created
+        self.nodes_matched += other.nodes_matched
+        self.relationships_created += other.relationships_created
+        self.relationships_matched += other.relationships_matched
+        self.errors.extend(other.errors)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _counters_from_summary(summary) -> dict[str, int]:
+    """Extract node/rel created/deleted counts from a neo4j ResultSummary."""
+    c = summary.counters
+    return {
+        "nodes_created": getattr(c, "nodes_created", 0),
+        "relationships_created": getattr(c, "relationships_created", 0),
+    }
+
+
+def _run_batch(
+    session,
+    statements: list[tuple[str, dict]],
+    batch_index: int,
+    result: WriteResult,
+    count_key_created: str,
+    count_key_matched: str,
+) -> bool:
+    """Execute a list of (cypher, params) tuples in a single transaction.
+
+    Returns True on success, False on failure (writes the error into result).
+    """
+    tx = None
+    try:
+        tx = session.begin_transaction()
+        total_created = 0
+        for cypher, params in statements:
+            summary = tx.run(cypher, **params).consume()
+            counts = _counters_from_summary(summary)
+            total_created += counts.get(count_key_created, 0)
+        tx.commit()
+
+        total_matched = len(statements) - total_created
+        setattr(result, count_key_created, getattr(result, count_key_created) + total_created)
+        setattr(result, count_key_matched, getattr(result, count_key_matched) + max(0, total_matched))
+        return True
+    except Exception as exc:
+        if tx is not None:
+            try:
+                tx.rollback()
+            except Exception:
+                pass
+        error_msg = f"Batch {batch_index} failed: {exc}"
+        logger.error(error_msg)
+        result.errors.append(error_msg)
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def create_constraints(labels: list[str], driver) -> None:
+    """Create uniqueness constraints for all node labels.
+
+    Raises on failure — do not attempt writes without constraints in place.
+    """
+    statements = generate_constraint_statements(labels)
+    with driver.session() as session:
+        for stmt in statements:
+            try:
+                session.run(stmt)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to create constraint for statement '{stmt}': {exc}"
+                ) from exc
+
+
+def write_nodes(
+    nodes: list[Node],
+    driver,
+    batch_size: int = 500,
+) -> WriteResult:
+    """Write nodes in batches. Fail-fast on batch error — remaining batches skipped."""
+    result = WriteResult()
+    if not nodes:
+        return result
+
+    statements = [generate_node_merge(n) for n in nodes]
+    batches = [statements[i : i + batch_size] for i in range(0, len(statements), batch_size)]
+
+    with driver.session() as session:
+        for batch_index, batch in enumerate(batches):
+            ok = _run_batch(
+                session,
+                batch,
+                batch_index,
+                result,
+                count_key_created="nodes_created",
+                count_key_matched="nodes_matched",
+            )
+            if not ok:
+                break  # fail-fast
+
+    return result
+
+
+def write_relationships(
+    rels: list[Relationship],
+    driver,
+    batch_size: int = 500,
+) -> WriteResult:
+    """Write relationships in batches. Fail-fast on batch error."""
+    result = WriteResult()
+    if not rels:
+        return result
+
+    valid_rels = []
+    for r in rels:
+        if not r.from_label or not r.to_label:
+            msg = f"Skipping relationship {r.type} ({r.from_id} -> {r.to_id}): missing label"
+            logger.warning(msg)
+            result.errors.append(msg)
+        else:
+            valid_rels.append(r)
+    rels = valid_rels
+
+    if not rels:
+        return result
+
+    statements = [generate_relationship_merge(r) for r in rels]
+    batches = [statements[i : i + batch_size] for i in range(0, len(statements), batch_size)]
+
+    with driver.session() as session:
+        for batch_index, batch in enumerate(batches):
+            ok = _run_batch(
+                session,
+                batch,
+                batch_index,
+                result,
+                count_key_created="relationships_created",
+                count_key_matched="relationships_matched",
+            )
+            if not ok:
+                break
+
+    return result
+
+
+def write_all(
+    nodes: list[Node],
+    rels: list[Relationship],
+    driver,
+    batch_size: int = 500,
+) -> WriteResult:
+    """Full write: constraints → nodes → relationships.
+
+    Nodes are written before relationships to prevent MATCH failures.
+    """
+    labels = list({n.label for n in nodes})
+    if labels:
+        create_constraints(labels, driver)
+
+    result = WriteResult()
+    node_result = write_nodes(nodes, driver, batch_size=batch_size)
+    result.merge(node_result)
+
+    if not result.errors:
+        rel_result = write_relationships(rels, driver, batch_size=batch_size)
+        result.merge(rel_result)
+
+    return result

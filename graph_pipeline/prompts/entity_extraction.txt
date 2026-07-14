@@ -1,0 +1,37 @@
+You are extracting entities and relationships from a record that contains ambiguous fields.
+
+DATASET ID: {dataset_id}
+NODE LABEL: {label}
+RECORD IDENTITY FIELD: {id_field}
+RECORD:
+{record_json}
+
+AMBIGUOUS FIELDS: {ambiguous_fields}
+
+For each ambiguous field, determine whether its value should produce:
+- additional Node objects (return in "nodes")
+- additional Relationship objects (return in "relationships")
+- or be ignored
+
+Return ONLY valid JSON — no markdown, no explanation — with this structure:
+{
+  "nodes": [
+    {
+      "id": "<dataset_id>:<value of the {id_field} field>",
+      "label": "<PascalCase label>",
+      "properties": {},
+      "source_record_id": "<value of the {id_field} field>"
+    }
+  ],
+  "relationships": [
+    {
+      "from_id": "<dataset_id>:<value of the {id_field} field>",
+      "to_id": "<dataset_id>:<value of the {id_field} field>",
+      "from_label": "<label>",
+      "to_label": "<label>",
+      "type": "<SCREAMING_SNAKE_CASE>",
+      "properties": {},
+      "source_record_id": "<value of the {id_field} field>"
+    }
+  ]
+}

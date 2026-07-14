@@ -1,0 +1,52 @@
+You are building a Neo4j knowledge graph from a new dataset.
+
+EXISTING SCHEMA (already in the graph — reuse these canonical names if applicable):
+{shared_context_yaml}
+
+NEW DATASET STRUCTURE:
+{structure_summary}
+
+SAMPLE RECORDS:
+{sample_records_json}
+
+Answer the following questions and return a JSON object that matches the dataset_context schema exactly:
+
+1. Which typeName values should become Neo4j node labels?
+   Map each to a canonical PascalCase label name.
+
+2. Which fields are foreign keys (references to other nodes by id)?
+   List each as: {{"field_name": "...", "points_to_type": "..."}}
+
+3. Which nested arrays should become child nodes vs. stay as properties?
+   For each array field, decide: "node" or "property"
+
+4. Which association edgeNames map to which relationship type names?
+   Use SCREAMING_SNAKE_CASE for relationship names.
+
+5. Are there any structural patterns not covered by the existing schema?
+
+Return ONLY valid JSON — no markdown, no explanation — matching this schema:
+{{
+  "dataset_id": "<string>",
+  "source_file": "",
+  "generated_at": "<YYYY-MM-DD>",
+  "node_types": [
+    {{"name": "<typeName from data>", "maps_to": "<PascalCase Neo4j label>", "identity_key": "uniqueId"}}
+  ],
+  "relationship_types": [
+    {{"name": "<source edge name>", "maps_to": "<SCREAMING_SNAKE_CASE>", "from": "<label>", "to": "<label>"}}
+  ],
+  "implicit_relationships": [
+    {{
+      "description": "<what this FK represents>",
+      "pattern": "<pattern name>",
+      "edge_name": "<field or edge name>",
+      "maps_to": "<SCREAMING_SNAKE_CASE>",
+      "cross_dataset": false,
+      "target_dataset_id": null
+    }}
+  ],
+  "design_decisions": [
+    {{"question": "<question>", "decision": "<decision>", "rationale": "<why>"}}
+  ]
+}}

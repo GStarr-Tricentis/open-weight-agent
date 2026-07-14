@@ -11,6 +11,7 @@ dependencies = [
     "openai>=1.30",
     "pydantic>=2.0",
     "pyyaml>=6.0",
+    "neo4j>=5.0",
 ]
 
 [project.optional-dependencies]
@@ -30,10 +31,12 @@ dev = [
 agent-poc = "main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["agent_poc"]
+packages = ["agent_poc", "graph_pipeline"]
 
 [tool.pytest.ini_options]
-testpaths = ["agent_poc/tests"]
+testpaths = ["agent_poc/tests", "tests"]
 markers = [
     "integration: requires a running Ollama instance",
+    "llm: requires a live LLM (pass --llm to enable)",
+    "integration: requires live external services like Neo4j (pass --integration to enable)",
 ]

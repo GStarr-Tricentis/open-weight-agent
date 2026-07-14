@@ -1,0 +1,7 @@
+{
+  "metadata": {"source": "test"},
+  "items": [
+    {"id": 10, "label": "foo"},
+    {"id": 11, "label": "bar"}
+  ]
+}

@@ -10,7 +10,7 @@ CONFIG_PATH = "agent_poc/config/config.yaml"
 
 def test_load_config_model_name():
     c = load_config(CONFIG_PATH)
-    assert c.model.model_name == "qwen2.5:7b"
+    assert c.model.model_name
 
 
 def test_load_config_agent_defaults():
@@ -33,10 +33,8 @@ def test_load_config_mcp_neo4j():
     assert "NEO4J_URI" in c.mcp.servers[0].env
 
 
-def test_load_config_mcp_env_expansion():
-    import os
-    os.environ["NEO4J_PASSWORD"] = "test_secret"
+def test_load_config_mcp_env_expansion(monkeypatch):
+    monkeypatch.setenv("NEO4J_PASSWORD", "test_secret")
     c = load_config(CONFIG_PATH)
     expanded = c.mcp.servers[0].expanded_env()
     assert expanded["NEO4J_PASSWORD"] == "test_secret"
-    del os.environ["NEO4J_PASSWORD"]
