@@ -34,8 +34,6 @@ htmlcov/
 context/datasets/
 context/shared_context.yaml
 
-# Large test data files
-test_data/dump-all-v3.jsonl
 
 # Benchmark outputs
 results*.csv
