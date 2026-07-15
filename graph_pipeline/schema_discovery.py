@@ -6,8 +6,8 @@ import re
 from pathlib import Path
 
 import yaml
-from openai import OpenAI
 
+from agent_poc.agent.types import ModelBackend
 from graph_pipeline.context_store import (
     AssociationConfig,
     DatasetContext,
@@ -90,17 +90,13 @@ def _extract_json_values(text: str) -> list:
     return values
 
 
-def _llm_call(client: OpenAI, model: str, prompt: str, max_retries: int, label: str) -> str:
+def _llm_call(backend: ModelBackend, prompt: str, max_retries: int, label: str) -> str:
     """Call the LLM, retrying on empty responses. Returns raw content."""
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 1):
         try:
-            response = client.chat.completions.create(
-                model=model,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = response.choices[0].message.content or ""
+            response = backend.complete(messages=[{"role": "user", "content": prompt}], tools=[])
+            raw = response.content or ""
             logger.debug("%s attempt %d raw response:\n%s", label, attempt, raw)
             if raw.strip():
                 return raw
@@ -118,8 +114,7 @@ def _llm_call(client: OpenAI, model: str, prompt: str, max_retries: int, label: 
 def _propose_node_types(
     sample: list[dict],
     shared_context: SharedContext,
-    client: OpenAI,
-    model: str,
+    backend: ModelBackend,
     max_retries: int,
 ) -> tuple[list[DatasetNodeType], dict]:
     """Return (node_types, structural_config). structural_config is {} if the LLM omits it."""
@@ -132,7 +127,7 @@ def _propose_node_types(
 
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 1):
-        raw = _llm_call(client, model, prompt, max_retries=1, label=f"node_types attempt {attempt}")
+        raw = _llm_call(backend, prompt, max_retries=1, label=f"node_types attempt {attempt}")
         try:
             text = _strip_llm_wrapper(raw)
             values = _extract_json_values(text)
@@ -163,8 +158,7 @@ def _propose_node_types(
 def _propose_relationship_types(
     sample: list[dict],
     node_types: list[DatasetNodeType],
-    client: OpenAI,
-    model: str,
+    backend: ModelBackend,
     max_retries: int,
 ) -> tuple[list[DatasetRelationshipType], list[ImplicitRelationship], dict]:
     template = _RELS_PROMPT_PATH.read_text(encoding="utf-8")
@@ -194,7 +188,7 @@ def _propose_relationship_types(
 
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 1):
-        raw = _llm_call(client, model, prompt, max_retries=1, label=f"rel_types attempt {attempt}")
+        raw = _llm_call(backend, prompt, max_retries=1, label=f"rel_types attempt {attempt}")
         try:
             text = _clean_llm_output(raw)
             data = json.loads(text)
@@ -229,8 +223,7 @@ def _propose_relationship_types(
 
 def _propose_ambiguous_fields(
     sample: list[dict],
-    client: OpenAI,
-    model: str,
+    backend: ModelBackend,
     max_retries: int,
 ) -> list[str]:
     """Return field names whose values may contain implicit entity/relationship references."""
@@ -242,7 +235,7 @@ def _propose_ambiguous_fields(
 
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 1):
-        raw = _llm_call(client, model, prompt, max_retries=1, label=f"ambiguous_fields attempt {attempt}")
+        raw = _llm_call(backend, prompt, max_retries=1, label=f"ambiguous_fields attempt {attempt}")
         try:
             text = _clean_llm_output(raw)
             data = json.loads(text)
@@ -266,8 +259,7 @@ def _propose_ambiguous_fields(
 def propose_dataset_context(
     sample: list[dict],
     shared_context: SharedContext,
-    model: str,
-    ollama_base_url: str,
+    backend: ModelBackend,
     dataset_id: str = "new_dataset",
     max_retries: int = 3,
 ) -> DatasetContext:
@@ -277,13 +269,12 @@ def propose_dataset_context(
     Both calls use temperature=0 for deterministic output.
     """
     import datetime
-    client = OpenAI(base_url=ollama_base_url, api_key="ollama")
 
-    node_types, structural_config = _propose_node_types(sample, shared_context, client, model, max_retries)
+    node_types, structural_config = _propose_node_types(sample, shared_context, backend, max_retries)
     rel_types, implicit_rels, assoc_config_dict = _propose_relationship_types(
-        sample, node_types, client, model, max_retries
+        sample, node_types, backend, max_retries
     )
-    ambiguous_fields = _propose_ambiguous_fields(sample, client, model, max_retries)
+    ambiguous_fields = _propose_ambiguous_fields(sample, backend, max_retries)
 
     # hierarchy_config
     hierarchy_config: HierarchyConfig | None = None

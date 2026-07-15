@@ -68,5 +68,6 @@ class OpenAICompatibleBackend:
             content=message.content,
             tool_calls=tool_calls,
             finish_reason=finish_reason,
+            assistant_message=response.choices[0].message.model_dump(exclude_none=False),
             raw=response,
         )

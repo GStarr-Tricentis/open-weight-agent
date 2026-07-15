@@ -52,6 +52,8 @@ def main() -> None:
     parser.add_argument("--sample-size", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--config", default="agent_poc/config/config.yaml")
+    parser.add_argument("--provider", default="local", choices=["local"],
+                        help="Model provider (default: local)")
     args = parser.parse_args()
 
     from agent_poc.config.loader import load_config, load_dotenv
@@ -61,10 +63,10 @@ def main() -> None:
 
     file_path = args.file
     dataset_id = args.dataset_id or Path(file_path).stem
-    model = args.model or gp.default_model
+    from agent_poc.models.factory import make_backend
+    backend = make_backend(config, provider=args.provider, model_override=args.model)
     sample_size = args.sample_size or gp.default_sample_size
     batch_size = args.batch_size or gp.default_batch_size
-    ollama_base_url = config.model.base_url
 
     TOTAL_STEPS = 8
 
@@ -103,13 +105,12 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # Step 3: Schema discovery
     # -------------------------------------------------------------------------
-    _step(3, TOTAL_STEPS, f"Proposing dataset context via {model}...")
+    _step(3, TOTAL_STEPS, "Proposing dataset context...")
     from graph_pipeline.schema_discovery import propose_dataset_context, validate_proposed_context
     proposed_ctx = propose_dataset_context(
         sample=sample,
         shared_context=shared_ctx,
-        model=model,
-        ollama_base_url=ollama_base_url,
+        backend=backend,
         dataset_id=dataset_id,
     )
 
@@ -165,7 +166,7 @@ def main() -> None:
     # -------------------------------------------------------------------------
     _step(5, TOTAL_STEPS, "Extracting nodes and relationships...")
     from graph_pipeline.extractor import extract_all
-    nodes, rels = extract_all(records, dataset_ctx, shared_ctx, ollama_base_url=ollama_base_url, model=model)
+    nodes, rels = extract_all(records, dataset_ctx, shared_ctx, backend=backend)
     _indent(f"{len(nodes)} nodes, {len(rels)} relationships")
 
     # -------------------------------------------------------------------------

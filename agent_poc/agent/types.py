@@ -42,6 +42,7 @@ class ModelResponse(BaseModel):
     content: str | None
     tool_calls: list[ToolCall]
     finish_reason: str  # "stop", "tool_calls", "length"
+    assistant_message: dict
     raw: Any
 
 

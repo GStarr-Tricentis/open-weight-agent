@@ -3,7 +3,30 @@
 Unit tests run without a model. The integration test requires a live Ollama instance
 and must be opted in with: pytest --llm tests/test_schema_discovery.py
 """
+import json
+
 import pytest
+
+
+# ---------------------------------------------------------------------------
+# MockBackend
+# ---------------------------------------------------------------------------
+
+class MockBackend:
+    """Minimal ModelBackend implementation for unit tests."""
+
+    def __init__(self, response_content: str):
+        self._content = response_content
+
+    def complete(self, messages, tools):
+        from agent_poc.agent.types import ModelResponse
+        return ModelResponse(
+            content=self._content,
+            tool_calls=[],
+            finish_reason="stop",
+            assistant_message={"role": "assistant", "content": self._content},
+            raw=None,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -131,18 +154,131 @@ class TestValidateProposedContext:
 # Integration test — requires live Ollama + --llm flag
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# propose_dataset_context — unit tests using MockBackend
+# ---------------------------------------------------------------------------
+
+class TestProposeDatasetContext:
+    def _nodes_response(self):
+        node_types = [
+            {"name": "TestCase", "maps_to": "TestCase", "identity_key": "uniqueId"},
+            {"name": "XModule", "maps_to": "XModule", "identity_key": "uniqueId"},
+        ]
+        structural_config = {"id_field": "uniqueId", "type_field": "typeName"}
+        return json.dumps(node_types) + "\n" + json.dumps(structural_config)
+
+    def _rels_response(self):
+        return json.dumps({
+            "relationship_types": [
+                {"name": "Requirement", "maps_to": "COVERS", "from": "TestCase", "to": "Requirement"}
+            ],
+            "implicit_relationships": [],
+            "association_config": None,
+        })
+
+    def _ambiguous_response(self):
+        return json.dumps([])
+
+    def test_returns_dataset_context(self):
+        from graph_pipeline.context_store import DatasetContext, SharedContext
+        from graph_pipeline.schema_discovery import propose_dataset_context
+
+        # The mock needs to return different responses for 3 calls.
+        responses = [self._nodes_response(), self._rels_response(), self._ambiguous_response()]
+        call_count = [0]
+
+        class MultiMockBackend:
+            def complete(self, messages, tools):
+                from agent_poc.agent.types import ModelResponse
+                content = responses[call_count[0]]
+                call_count[0] += 1
+                return ModelResponse(
+                    content=content,
+                    tool_calls=[],
+                    finish_reason="stop",
+                    assistant_message={"role": "assistant", "content": content},
+                    raw=None,
+                )
+
+        result = propose_dataset_context(
+            sample=SAMPLE,
+            shared_context=SharedContext(),
+            backend=MultiMockBackend(),
+        )
+        assert isinstance(result, DatasetContext)
+        assert isinstance(result.node_types, list)
+        assert isinstance(result.relationship_types, list)
+
+    def test_node_types_parsed(self):
+        from graph_pipeline.context_store import SharedContext
+        from graph_pipeline.schema_discovery import propose_dataset_context
+
+        responses = [self._nodes_response(), self._rels_response(), self._ambiguous_response()]
+        call_count = [0]
+
+        class MultiMockBackend:
+            def complete(self, messages, tools):
+                from agent_poc.agent.types import ModelResponse
+                content = responses[call_count[0]]
+                call_count[0] += 1
+                return ModelResponse(
+                    content=content,
+                    tool_calls=[],
+                    finish_reason="stop",
+                    assistant_message={"role": "assistant", "content": content},
+                    raw=None,
+                )
+
+        result = propose_dataset_context(
+            sample=SAMPLE,
+            shared_context=SharedContext(),
+            backend=MultiMockBackend(),
+        )
+        names = {nt.name for nt in result.node_types}
+        assert "TestCase" in names
+        assert "XModule" in names
+
+    def test_relationship_types_parsed(self):
+        from graph_pipeline.context_store import SharedContext
+        from graph_pipeline.schema_discovery import propose_dataset_context
+
+        responses = [self._nodes_response(), self._rels_response(), self._ambiguous_response()]
+        call_count = [0]
+
+        class MultiMockBackend:
+            def complete(self, messages, tools):
+                from agent_poc.agent.types import ModelResponse
+                content = responses[call_count[0]]
+                call_count[0] += 1
+                return ModelResponse(
+                    content=content,
+                    tool_calls=[],
+                    finish_reason="stop",
+                    assistant_message={"role": "assistant", "content": content},
+                    raw=None,
+                )
+
+        result = propose_dataset_context(
+            sample=SAMPLE,
+            shared_context=SharedContext(),
+            backend=MultiMockBackend(),
+        )
+        assert len(result.relationship_types) == 1
+        assert result.relationship_types[0].maps_to == "COVERS"
+
+
 @pytest.mark.llm
 def test_propose_dataset_context_returns_valid_result():
     """Call a real model and assert the result is a structurally valid DatasetContext."""
     from graph_pipeline.context_store import DatasetContext, SharedContext
     from graph_pipeline.schema_discovery import propose_dataset_context
+    from agent_poc.agent.backends.ollama import OllamaBackend
 
     shared_ctx = SharedContext()
     result = propose_dataset_context(
         sample=SAMPLE,
         shared_context=shared_ctx,
-        model="qwen3:8b",
-        ollama_base_url="http://localhost:11434/v1",
+        backend=OllamaBackend(model="qwen3:8b", base_url="http://localhost:11434/v1"),
     )
     assert isinstance(result, DatasetContext)
     assert isinstance(result.node_types, list)

@@ -678,11 +678,86 @@ class TestRule6ImplicitFKs:
 # Rule 7 — LLM-inferred extraction (integration, requires --llm)
 # ---------------------------------------------------------------------------
 
+class MockBackend:
+    """Minimal ModelBackend for unit tests."""
+
+    def __init__(self, response_content: str):
+        self._content = response_content
+
+    def complete(self, messages, tools):
+        from agent_poc.agent.types import ModelResponse
+        return ModelResponse(
+            content=self._content,
+            tool_calls=[],
+            finish_reason="stop",
+            assistant_message={"role": "assistant", "content": self._content},
+            raw=None,
+        )
+
+
+class TestRule7LlmExtraction:
+    def test_llm_nodes_marked_llm_inferred(self):
+        """MockBackend returning valid JSON produces LLM_INFERRED nodes."""
+        import json
+        from graph_pipeline.extractor import extract_all
+        from graph_pipeline.models import ExtractionSource
+
+        llm_response = json.dumps({
+            "nodes": [
+                {"id": "ds1:cat-functional", "label": "Category",
+                 "properties": {"name": "functional"}, "source_record_id": "tc-001"}
+            ],
+            "relationships": [],
+        })
+        ctx = make_dataset_ctx(
+            node_types=[{"name": "TestCase", "maps_to": "TestCase"}],
+            ambiguous_fields=["category"],
+            hierarchy_config=None,
+            association_config=None,
+        )
+        records = [
+            {
+                "uniqueId": "tc-001",
+                "typeName": "TestCase",
+                "name": "Login",
+                "category": "functional|regression",
+            }
+        ]
+        nodes, _ = extract_all(records, ctx, make_shared_ctx(), backend=MockBackend(llm_response))
+        inferred = [n for n in nodes if n.extraction_source == ExtractionSource.LLM_INFERRED]
+        assert len(inferred) == 1
+        assert inferred[0].id == "ds1:cat-functional"
+
+    def test_no_llm_call_when_backend_none(self):
+        """When backend is None, ambiguous_fields are silently skipped."""
+        from graph_pipeline.extractor import extract_all
+        from graph_pipeline.models import ExtractionSource
+
+        ctx = make_dataset_ctx(
+            node_types=[{"name": "TestCase", "maps_to": "TestCase"}],
+            ambiguous_fields=["category"],
+            hierarchy_config=None,
+            association_config=None,
+        )
+        records = [
+            {
+                "uniqueId": "tc-001",
+                "typeName": "TestCase",
+                "name": "Login",
+                "category": "functional",
+            }
+        ]
+        nodes, _ = extract_all(records, ctx, make_shared_ctx(), backend=None)
+        inferred = [n for n in nodes if n.extraction_source == ExtractionSource.LLM_INFERRED]
+        assert len(inferred) == 0
+
+
 @pytest.mark.llm
 def test_llm_inferred_extraction_source():
     """Ambiguous fields trigger an LLM call; resulting nodes are marked LLM_INFERRED."""
     from graph_pipeline.extractor import extract_all
     from graph_pipeline.models import ExtractionSource
+    from agent_poc.agent.backends.ollama import OllamaBackend
 
     ctx = make_dataset_ctx(
         node_types=[{"name": "TestCase", "maps_to": "TestCase"}],
@@ -696,13 +771,8 @@ def test_llm_inferred_extraction_source():
             "category": "functional|regression",  # ambiguous — could be multiple types
         }
     ]
-    nodes, _ = extract_all(
-        records,
-        ctx,
-        make_shared_ctx(),
-        ollama_base_url="http://localhost:11434/v1",
-        model="qwen3:8b",
-    )
+    backend = OllamaBackend(model="qwen3:8b", base_url="http://localhost:11434/v1")
+    nodes, _ = extract_all(records, ctx, make_shared_ctx(), backend=backend)
     inferred = [n for n in nodes if n.extraction_source == ExtractionSource.LLM_INFERRED]
     # We don't assert specific values — just that the LLM path ran and marked something
     assert isinstance(inferred, list)

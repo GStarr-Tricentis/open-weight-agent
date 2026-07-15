@@ -28,9 +28,9 @@ def test_load_config_sandbox():
 
 def test_load_config_mcp_neo4j():
     c = load_config(CONFIG_PATH)
-    assert len(c.mcp.servers) == 1
-    assert c.mcp.servers[0].name == "neo4j"
-    assert "NEO4J_URI" in c.mcp.servers[0].env
+    assert len(c.mcp.servers) >= 1
+    neo4j = next(s for s in c.mcp.servers if s.name == "neo4j")
+    assert "NEO4J_URI" in neo4j.env
 
 
 def test_load_config_mcp_env_expansion(monkeypatch):

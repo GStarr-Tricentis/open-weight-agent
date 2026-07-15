@@ -17,7 +17,6 @@ load_dotenv()
 
 from agent_poc.agent.instrumentation import TokenUsage, TrackingBackend, build_registry
 from agent_poc.agent.runner import AgentRunner
-from agent_poc.models.openai_compatible import OpenAICompatibleBackend
 
 SYSTEM_PROMPT_PATH = Path("agent_poc/prompts/system.txt")
 
@@ -53,6 +52,8 @@ def main() -> None:
     parser.add_argument("--output", default="benchmark_results.csv", help="Output CSV path")
     parser.add_argument("--reps", type=int, default=3, help="Repetitions per query×model")
     parser.add_argument("--config", default="agent_poc/config/config.yaml", help="Agent config path")
+    parser.add_argument("--provider", default="local", choices=["local"],
+                        help="Model provider (default: local)")
     args = parser.parse_args()
 
     models = [m.strip() for m in args.models.split(",") if m.strip()]
@@ -82,7 +83,8 @@ def main() -> None:
                     run_id += 1
                     registry.reset()
                     usage = TokenUsage()
-                    backend = TrackingBackend(OpenAICompatibleBackend(config.model), usage)
+                    from agent_poc.models.factory import make_backend
+                    backend = TrackingBackend(make_backend(config, provider=args.provider, model_override=model), usage)
                     runner = AgentRunner(
                         backend=backend,
                         registry=registry,
