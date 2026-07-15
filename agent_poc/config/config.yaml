@@ -41,4 +41,4 @@ graph_pipeline:
   default_model: qwen3:8b
 
 tricentis:
-  deployment: ""  # set to your deployment name, or pass via --model
+  deployment: "${TAIS_LLM_DEPLOYMENT}"

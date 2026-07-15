@@ -89,6 +89,17 @@ class AgentPocConfig(BaseModel):
     tricentis: TricentisConfig = TricentisConfig()
 
 
+def _expand_env_in_raw(obj):
+    """Recursively expand ${VAR} in all string values of a nested dict/list."""
+    if isinstance(obj, dict):
+        return {k: _expand_env_in_raw(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_expand_env_in_raw(v) for v in obj]
+    if isinstance(obj, str):
+        return _expand_env(obj)
+    return obj
+
+
 def load_config(path: str | Path) -> AgentPocConfig:
     raw = yaml.safe_load(Path(path).read_text())
-    return AgentPocConfig.model_validate(raw)
+    return AgentPocConfig.model_validate(_expand_env_in_raw(raw))
