@@ -150,7 +150,7 @@ Agent reads the file, recognises the format, writes a parser with `python_exec`,
 
 ```yaml
 model:
-  provider: ollama          # informational only
+  provider: local           # "local" for Ollama/llama.cpp/vLLM; "tricentis" coming in PR 2
   base_url: http://localhost:11434/v1
   api_key: ollama           # required by OpenAI SDK; value ignored by Ollama
   model_name: qwen2.5:7b
