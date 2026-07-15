@@ -4,9 +4,15 @@ A synchronous tool-using agent that runs against any OpenAI-compatible local mod
 
 ## Prerequisites
 
+**Local provider (default):**
 - Python 3.11+
 - [Ollama](https://ollama.ai) installed and running (`ollama serve`)
 - A pulled model — `ollama pull qwen2.5:7b` is the default
+
+**Tricentis cloud provider:**
+- Python 3.11+
+- Access to a TAIS tenant — set `TAIS_GATEWAY_URL`, `TAIS_TENANT_NAME`, `TAIS_PRODUCT_NAME`, `KB_NODE_ID`, and `TAIS_LLM_DEPLOYMENT` in `.env`
+- First run triggers a browser device flow login; subsequent runs use the cached token at `./data/tokens.json`
 
 ## Install
 
@@ -23,14 +29,14 @@ pip install -e ".[mcp]"
 # Development (includes pytest)
 pip install -e ".[dev,mcp]"
 
-# With Tricentis cloud backend (requires submodule — run after git clone --recurse-submodules)
+# With Tricentis cloud backend
+git submodule update --init                                              # pull tricentis-ai-client
 uv pip install --override-requires-python ">=3.11" -e "./tricentis-ai-client[openai]"
 pip install -e ".[tricentis]"
 ```
 
-> **Note:** The `tricentis-ai-client` submodule declares `requires-python = ">=3.13"` but runs
-> fine on 3.11. The `--override-requires-python` flag bypasses the metadata check. If you clone
-> without `--recurse-submodules`, run `git submodule update --init` first.
+> **Note:** `tricentis-ai-client` declares `requires-python = ">=3.13"` but runs fine on 3.11.
+> The `--override-requires-python` flag bypasses that metadata check.
 
 ## Streamlit UI
 
@@ -115,6 +121,13 @@ Override model without editing config:
 python main.py --model qwen3:8b --prompt "hello"
 ```
 
+Use Tricentis cloud instead of local Ollama (set `TAIS_LLM_DEPLOYMENT` in `.env` first):
+```bash
+python main.py --provider tricentis --prompt "list the files in the current directory"
+python scripts/query.py --provider tricentis --question "how many test cases are in the graph?"
+python scripts/ingest.py --file data.jsonl --provider tricentis
+```
+
 ## The four demos
 
 ### Demo 1 — File Q&A
@@ -158,7 +171,7 @@ Agent reads the file, recognises the format, writes a parser with `python_exec`,
 
 ```yaml
 model:
-  provider: local           # "local" for Ollama/llama.cpp/vLLM; "tricentis" coming in PR 2
+  provider: local           # "local" for Ollama/llama.cpp/vLLM; "tricentis" for Tricentis cloud
   base_url: http://localhost:11434/v1
   api_key: ollama           # required by OpenAI SDK; value ignored by Ollama
   model_name: qwen2.5:7b
