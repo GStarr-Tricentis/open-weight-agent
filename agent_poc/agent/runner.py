@@ -39,9 +39,7 @@ class AgentRunner:
 
             response = self._backend.complete(state.messages, self._registry.list_tools())
 
-            state.messages.append(
-                response.raw.choices[0].message.model_dump(exclude_none=False)
-            )
+            state.messages.append(response.assistant_message)
 
             if response.finish_reason == "stop" and not response.tool_calls:
                 state.finished = True

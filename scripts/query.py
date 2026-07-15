@@ -18,6 +18,8 @@ def main() -> None:
     parser.add_argument("--question", required=True, help="Natural language question to answer")
     parser.add_argument("--model", default=None, help="Override model from config")
     parser.add_argument("--config", default="agent_poc/config/config.yaml")
+    parser.add_argument("--provider", default="local", choices=["local"],
+                        help="Model provider (default: local)")
     args = parser.parse_args()
 
     from agent_poc.config.loader import load_config, load_dotenv
@@ -32,7 +34,6 @@ def main() -> None:
         sys.exit(1)
     system_prompt = prompt_path.read_text()
 
-    from agent_poc.models.openai_compatible import OpenAICompatibleBackend
     from agent_poc.tools.registry import ToolRegistry
     from agent_poc.tools.mcp_adapter import MCP_AVAILABLE, MCPAdapter
     from agent_poc.agent.runner import AgentRunner
@@ -51,7 +52,8 @@ def main() -> None:
     elif config.mcp.servers:
         print("[mcp] Warning: mcp package not installed — Neo4j tools unavailable", file=sys.stderr)
 
-    backend = OpenAICompatibleBackend(config.model)
+    from agent_poc.models.factory import make_backend
+    backend = make_backend(config, provider=args.provider, model_override=args.model)
     runner = AgentRunner(backend=backend, registry=registry, config=config, system_prompt=system_prompt)
     state = runner.run(args.question)
 

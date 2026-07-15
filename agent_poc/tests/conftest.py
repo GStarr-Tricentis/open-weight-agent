@@ -35,6 +35,7 @@ def make_stop_response(content: str = "Done.") -> ModelResponse:
         content=content,
         tool_calls=[],
         finish_reason="stop",
+        assistant_message={"role": "assistant", "content": content, "tool_calls": None},
         raw=_make_raw(content=content),
     )
 
@@ -49,6 +50,11 @@ def make_tool_call_response(
         content=None,
         tool_calls=[tc],
         finish_reason="tool_calls",
+        assistant_message={
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": call_id, "function": {"name": tool_name}}],
+        },
         raw=_make_raw(
             tool_calls=[{"id": call_id, "function": {"name": tool_name}}]
         ),

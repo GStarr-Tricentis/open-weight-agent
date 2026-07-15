@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 
+from agent_poc.agent.types import ModelBackend
 from graph_pipeline.context_store import DatasetContext, HierarchyConfig, SharedContext
 from graph_pipeline.models import ExtractionSource, Node, Relationship
 
@@ -137,18 +138,10 @@ def _llm_extract_ambiguous(
     records: list[dict],
     dataset_ctx: DatasetContext,
     type_map: dict[str, str],
-    ollama_base_url: str,
-    model: str,
+    backend: ModelBackend,
 ) -> tuple[list[Node], list[Relationship]]:
     """Call the LLM once per ambiguous record; mark results LLM_INFERRED."""
-    try:
-        from openai import OpenAI
-    except ImportError:
-        logger.warning("openai not installed; skipping LLM extraction")
-        return [], []
-
     template = _ENTITY_EXTRACTION_PROMPT.read_text(encoding="utf-8")
-    client = OpenAI(base_url=ollama_base_url, api_key="ollama")
     dataset_id = dataset_ctx.dataset_id
     ambiguous = dataset_ctx.ambiguous_fields
     id_field = dataset_ctx.id_field
@@ -172,12 +165,8 @@ def _llm_extract_ambiguous(
 
         raw = ""
         try:
-            resp = client.chat.completions.create(
-                model=model,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = resp.choices[0].message.content or ""
+            response = backend.complete(messages=[{"role": "user", "content": prompt}], tools=[])
+            raw = response.content or ""
             text = raw.strip()
             if text.startswith("```"):
                 lines = text.splitlines()
@@ -222,8 +211,7 @@ def extract_all(
     records: list[dict],
     dataset_ctx: DatasetContext,
     shared_ctx: SharedContext | None,
-    ollama_base_url: str = "http://localhost:11434/v1",
-    model: str = "qwen3:8b",
+    backend: ModelBackend | None = None,
 ) -> tuple[list[Node], list[Relationship]]:
     """Apply all extraction rules in order. Returns (nodes, relationships)."""
     dataset_id = dataset_ctx.dataset_id
@@ -380,9 +368,9 @@ def extract_all(
             )
 
     # ----- Rule 7: LLM-assisted extraction for ambiguous fields --------------
-    if dataset_ctx.ambiguous_fields:
+    if dataset_ctx.ambiguous_fields and backend is not None:
         llm_nodes, llm_rels = _llm_extract_ambiguous(
-            records, dataset_ctx, type_map, ollama_base_url, model
+            records, dataset_ctx, type_map, backend
         )
         all_nodes.extend(llm_nodes)
         all_rels.extend(llm_rels)

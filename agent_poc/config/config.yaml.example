@@ -1,5 +1,5 @@
 model:
-  provider: ollama
+  provider: local
   base_url: http://localhost:11434/v1
   api_key: ollama
   model_name: qwen3:8b

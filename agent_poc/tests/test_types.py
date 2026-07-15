@@ -59,13 +59,25 @@ def test_tool_result_error_flag():
 
 
 def test_model_response_no_tool_calls():
-    r = ModelResponse(content="hi", tool_calls=[], finish_reason="stop", raw=None)
+    r = ModelResponse(
+        content="hi",
+        tool_calls=[],
+        finish_reason="stop",
+        assistant_message={"role": "assistant", "content": "hi"},
+        raw=None,
+    )
     assert r.content == "hi"
     assert r.tool_calls == []
 
 
 def test_model_response_with_tool_calls():
     tc = ToolCall(id="1", name="foo", arguments={})
-    r = ModelResponse(content=None, tool_calls=[tc], finish_reason="tool_calls", raw=object())
+    r = ModelResponse(
+        content=None,
+        tool_calls=[tc],
+        finish_reason="tool_calls",
+        assistant_message={"role": "assistant", "content": None},
+        raw=object(),
+    )
     assert len(r.tool_calls) == 1
     assert r.tool_calls[0].name == "foo"

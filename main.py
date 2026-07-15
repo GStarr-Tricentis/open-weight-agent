@@ -14,6 +14,8 @@ def main() -> None:
     parser.add_argument("--model", default=None, help="Override model_name from config")
     parser.add_argument("--prompt", default=None, help="Single prompt (non-interactive)")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--provider", default="local", choices=["local"],
+                        help="Model provider (default: local)")
     args = parser.parse_args()
     from agent_poc.config.loader import load_dotenv
     load_dotenv()
@@ -21,7 +23,6 @@ def main() -> None:
         logging.getLogger().setLevel(logging.DEBUG)
 
     from agent_poc.config.loader import load_config
-    from agent_poc.models.openai_compatible import OpenAICompatibleBackend
     from agent_poc.tools.registry import ToolRegistry
     from agent_poc.tools.static.filesystem import LIST_DIR_TOOL, READ_FILE_TOOL, WRITE_FILE_TOOL
     from agent_poc.tools.static.shell import RUN_COMMAND_TOOL
@@ -59,7 +60,8 @@ def main() -> None:
     elif config.mcp.servers:
         print("[mcp] Warning: mcp package not installed", file=sys.stderr)
 
-    runner = AgentRunner(backend=OpenAICompatibleBackend(config.model),
+    from agent_poc.models.factory import make_backend
+    runner = AgentRunner(backend=make_backend(config, provider=args.provider, model_override=args.model),
                          registry=registry, config=config, system_prompt=system_prompt)
 
     def _reply(state) -> str:

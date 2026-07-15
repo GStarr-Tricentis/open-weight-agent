@@ -14,24 +14,24 @@ For each ambiguous field, determine whether its value should produce:
 - or be ignored
 
 Return ONLY valid JSON — no markdown, no explanation — with this structure:
-{
+{{
   "nodes": [
-    {
+    {{
       "id": "<dataset_id>:<value of the {id_field} field>",
       "label": "<PascalCase label>",
-      "properties": {},
+      "properties": {{}},
       "source_record_id": "<value of the {id_field} field>"
-    }
+    }}
   ],
   "relationships": [
-    {
+    {{
       "from_id": "<dataset_id>:<value of the {id_field} field>",
       "to_id": "<dataset_id>:<value of the {id_field} field>",
       "from_label": "<label>",
       "to_label": "<label>",
       "type": "<SCREAMING_SNAKE_CASE>",
-      "properties": {},
+      "properties": {{}},
       "source_record_id": "<value of the {id_field} field>"
-    }
+    }}
   ]
-}
+}}
