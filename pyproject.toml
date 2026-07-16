@@ -24,6 +24,8 @@ ui = [
 ]
 tricentis = [
     "tricentis-ai-client @ ./tricentis-ai-client",
+    "anthropic>=0.40",
+    "httpx>=0.27",
 ]
 dev = [
     "pytest>=8.0",
