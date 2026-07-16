@@ -12,47 +12,52 @@ SAMPLE RECORDS:
 {sample_records_json}
 
 TASK:
-For each distinct typeName value in the data, decide:
-1. What PascalCase Neo4j label should it map to?
-2. What field uniquely identifies each record? (almost always "uniqueId")
+Return ONLY a single JSON object — no explanation, no markdown, no extra text.
 
-Return ONLY a JSON array — no explanation, no markdown, no extra text:
+The object must have these keys:
 
-[
-  {{"name": "<typeName>", "maps_to": "<PascalCaseLabel>", "identity_key": "uniqueId"}},
-  ...
-]
+- "node_types": for each distinct typeName value in the data, decide:
+  1. What PascalCase Neo4j label should it map to?
+  2. What field uniquely identifies each record? (almost always "uniqueId")
 
-Rules:
-- Every typeName in the data must appear in the output
-- Use existing canonical labels from EXISTING SCHEMA where the type is the same concept
-- PascalCase labels only (e.g. TestCase, XModule, Folder)
-- Do not invent types that are not in the data
+- "id_field": the field that uniquely identifies each record (e.g. "uniqueId", "id", "uuid")
 
----
-STRUCTURAL FIELD MAPPING — after the JSON array above, output a second JSON object on a new line.
-This object describes how this dataset is structured, so extraction can work without hardcoded field names.
+- "type_field": the field that names the record type (e.g. "typeName", "type", "kind"). null if all records are the same type.
+
+- "hierarchy_config": if the data has a path/breadcrumb field encoding a folder hierarchy, describe it here. Set to null otherwise.
+
+- "nested_collections": array of array-of-objects fields that should become child nodes. Set to [] if none.
+
+Example response:
 
 {{
-  "id_field": "<field that uniquely identifies each record, e.g. 'id', 'uuid', 'employee_id'. Use 'uniqueId' if that is the field name.>",
-  "type_field": "<field that names the record type, e.g. 'typeName', 'type', 'kind'. null if all records are the same type.>",
+  "node_types": [
+    {{"name": "TestCase", "maps_to": "TestCase", "identity_key": "uniqueId"}},
+    {{"name": "XModule", "maps_to": "XModule", "identity_key": "uniqueId"}}
+  ],
+  "id_field": "uniqueId",
+  "type_field": "typeName",
   "hierarchy_config": {{
-    "field": "<name of the field that encodes a path hierarchy, e.g. 'nodePath', 'path', 'breadcrumb'>",
-    "separator": "<path delimiter, usually '/'>",
-    "phantom_label": "<PascalCase label for synthesized intermediate nodes, e.g. 'Folder', 'Category'>",
+    "field": "nodePath",
+    "separator": "/",
+    "phantom_label": "Folder",
     "edge_type": "CONTAINS"
   }},
   "nested_collections": [
     {{
-      "field": "<dot-path to an array-of-objects field that should become child nodes, e.g. 'details.moduleAttributes', 'line_items'>",
-      "child_label": "<PascalCase label for the child nodes>",
-      "edge_type": "<SCREAMING_SNAKE_CASE relationship from parent to child, e.g. 'HAS_ELEMENT'>",
-      "id_field": "<identity field within each child object>"
+      "field": "details.moduleAttributes",
+      "child_label": "ModuleAttribute",
+      "edge_type": "HAS_ATTRIBUTE",
+      "id_field": "uniqueId"
     }}
   ]
 }}
 
-Set hierarchy_config to null if the data has no path/breadcrumb field.
-Set nested_collections to [] if no array-of-objects fields should become child nodes.
-Do not invent fields that are not present in the sample data.
----
+Rules:
+- Every typeName in the data must appear in node_types
+- Use existing canonical labels from EXISTING SCHEMA where the type is the same concept
+- PascalCase labels only (e.g. TestCase, XModule, Folder)
+- Do not invent types that are not in the data
+- Set hierarchy_config to null if the data has no path/breadcrumb field
+- Set nested_collections to [] if no array-of-objects fields should become child nodes
+- Do not invent fields that are not present in the sample data

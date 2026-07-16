@@ -26,6 +26,11 @@ _NODES_PROMPT_PATH = Path(__file__).parent / "prompts" / "schema_proposal_nodes.
 _RELS_PROMPT_PATH = Path(__file__).parent / "prompts" / "schema_proposal_relationships.txt"
 _AMBIGUOUS_PROMPT_PATH = Path(__file__).parent / "prompts" / "schema_proposal_ambiguous.txt"
 
+_SCHEMAS_DIR = Path(__file__).parent / "schemas"
+_NODE_TYPES_FORMAT = json.loads((_SCHEMAS_DIR / "node_types.json").read_text())
+_REL_TYPES_FORMAT = json.loads((_SCHEMAS_DIR / "relationship_types.json").read_text())
+_AMBIGUOUS_FORMAT = json.loads((_SCHEMAS_DIR / "ambiguous_fields.json").read_text())
+
 _SHARED_CONTEXT_CHAR_BUDGET = 6_000 * 4  # ~6K tokens before switching to condensed form
 
 
@@ -90,17 +95,34 @@ def _extract_json_values(text: str) -> list:
     return values
 
 
-def _llm_call(backend: ModelBackend, prompt: str, max_retries: int, label: str) -> str:
-    """Call the LLM, retrying on empty responses. Returns raw content."""
+def _llm_call(
+    backend: ModelBackend,
+    messages: list[dict],
+    max_retries: int,
+    label: str,
+    response_format: dict | None = None,
+) -> str:
+    """Call the LLM with the given messages list, retrying once on empty response.
+
+    On empty response the assistant turn and a correction prompt are appended to
+    messages so the caller's conversational history stays consistent.
+    Returns raw content string.
+    """
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 1):
         try:
-            response = backend.complete(messages=[{"role": "user", "content": prompt}], tools=[])
+            response = backend.complete(
+                messages=messages,
+                tools=[],
+                response_format=response_format,
+            )
             raw = response.content or ""
             logger.debug("%s attempt %d raw response:\n%s", label, attempt, raw)
             if raw.strip():
                 return raw
             last_error = ValueError("empty response")
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({"role": "user", "content": "Your response was empty. Please return the required JSON."})
         except Exception as exc:
             logger.warning("%s attempt %d error: %s", label, attempt, exc)
             last_error = exc
@@ -125,28 +147,33 @@ def _propose_node_types(
         sample_records_json=json.dumps(sample[:10], indent=2, ensure_ascii=False),
     )
 
+    messages: list[dict] = [{"role": "user", "content": prompt}]
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 1):
-        raw = _llm_call(backend, prompt, max_retries=1, label=f"node_types attempt {attempt}")
+        raw = _llm_call(
+            backend, messages, max_retries=1,
+            label=f"node_types attempt {attempt}",
+            response_format=_NODE_TYPES_FORMAT,
+        )
         try:
-            text = _strip_llm_wrapper(raw)
-            values = _extract_json_values(text)
-            if not values:
-                raise ValueError("no JSON found in response")
-            first = values[0]
-            if not isinstance(first, list):
-                raise ValueError(f"expected JSON array as first value, got {type(first).__name__}")
-            node_types = [DatasetNodeType(**item) for item in first]
-
-            structural_config: dict = {}
-            if len(values) >= 2 and isinstance(values[1], dict):
-                structural_config = values[1]
-
+            text = _clean_llm_output(raw)
+            data = json.loads(text)
+            if not isinstance(data, dict):
+                raise ValueError(f"expected a JSON object, got {type(data).__name__}")
+            if "node_types" not in data:
+                raise ValueError("missing required key 'node_types'")
+            node_types = [DatasetNodeType(**item) for item in data["node_types"]]
             logger.info("node_types succeeded on attempt %d: %d types", attempt, len(node_types))
-            return node_types, structural_config
+            return node_types, data
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             logger.warning("node_types attempt %d failed: %s", attempt, exc)
             last_error = exc
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({"role": "user", "content": (
+                f"Your response could not be parsed (attempt {attempt}): {exc}. "
+                "Please return only valid JSON matching the required format. "
+                "Do not include any explanation or markdown."
+            )})
 
     raise RuntimeError(f"node type proposal failed after {max_retries} attempts. Last error: {last_error}")
 
@@ -186,9 +213,14 @@ def _propose_relationship_types(
         sample_records_json=json.dumps(rel_sample, indent=2, ensure_ascii=False),
     )
 
+    messages: list[dict] = [{"role": "user", "content": prompt}]
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 1):
-        raw = _llm_call(backend, prompt, max_retries=1, label=f"rel_types attempt {attempt}")
+        raw = _llm_call(
+            backend, messages, max_retries=1,
+            label=f"rel_types attempt {attempt}",
+            response_format=_REL_TYPES_FORMAT,
+        )
         try:
             text = _clean_llm_output(raw)
             data = json.loads(text)
@@ -213,6 +245,12 @@ def _propose_relationship_types(
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             logger.warning("rel_types attempt %d failed: %s", attempt, exc)
             last_error = exc
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({"role": "user", "content": (
+                f"Your response could not be parsed (attempt {attempt}): {exc}. "
+                "Please return only valid JSON matching the required format. "
+                "Do not include any explanation or markdown."
+            )})
 
     raise RuntimeError(f"relationship type proposal failed after {max_retries} attempts. Last error: {last_error}")
 
@@ -233,20 +271,33 @@ def _propose_ambiguous_fields(
         sample_records_json=json.dumps(sample[:10], indent=2, ensure_ascii=False),
     )
 
+    messages: list[dict] = [{"role": "user", "content": prompt}]
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 1):
-        raw = _llm_call(backend, prompt, max_retries=1, label=f"ambiguous_fields attempt {attempt}")
+        raw = _llm_call(
+            backend, messages, max_retries=1,
+            label=f"ambiguous_fields attempt {attempt}",
+            response_format=_AMBIGUOUS_FORMAT,
+        )
         try:
             text = _clean_llm_output(raw)
             data = json.loads(text)
-            if not isinstance(data, list):
-                raise ValueError(f"expected JSON array, got {type(data).__name__}")
-            fields = [f for f in data if isinstance(f, str)]
+            if not isinstance(data, dict):
+                raise ValueError(f"expected a JSON object, got {type(data).__name__}")
+            if "fields" not in data:
+                raise ValueError("missing required key 'fields'")
+            fields = [f for f in data["fields"] if isinstance(f, str)]
             logger.info("ambiguous_fields succeeded on attempt %d: %s", attempt, fields)
             return fields
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             logger.warning("ambiguous_fields attempt %d failed: %s", attempt, exc)
             last_error = exc
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({"role": "user", "content": (
+                f"Your response could not be parsed (attempt {attempt}): {exc}. "
+                "Please return only valid JSON matching the required format. "
+                "Do not include any explanation or markdown."
+            )})
 
     logger.warning("ambiguous_fields failed after %d attempts; defaulting to []. Last error: %s", max_retries, last_error)
     return []

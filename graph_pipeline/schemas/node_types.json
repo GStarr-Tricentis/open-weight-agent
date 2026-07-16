@@ -1,0 +1,56 @@
+{
+  "name": "node_types_response",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "required": ["node_types", "id_field", "type_field"],
+    "additionalProperties": false,
+    "properties": {
+      "node_types": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["name", "maps_to", "identity_key"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {"type": "string"},
+            "maps_to": {"type": "string"},
+            "identity_key": {"type": "string"}
+          }
+        }
+      },
+      "id_field": {"type": "string"},
+      "type_field": {"type": ["string", "null"]},
+      "hierarchy_config": {
+        "oneOf": [
+          {"type": "null"},
+          {
+            "type": "object",
+            "required": ["field", "separator", "phantom_label", "edge_type"],
+            "additionalProperties": false,
+            "properties": {
+              "field": {"type": "string"},
+              "separator": {"type": "string"},
+              "phantom_label": {"type": "string"},
+              "edge_type": {"type": "string"}
+            }
+          }
+        ]
+      },
+      "nested_collections": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["field", "child_label", "edge_type", "id_field"],
+          "additionalProperties": false,
+          "properties": {
+            "field": {"type": "string"},
+            "child_label": {"type": "string"},
+            "edge_type": {"type": "string"},
+            "id_field": {"type": "string"}
+          }
+        }
+      }
+    }
+  }
+}

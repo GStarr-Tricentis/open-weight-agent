@@ -1,0 +1,58 @@
+{
+  "name": "relationship_types_response",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "required": ["relationship_types", "implicit_relationships", "association_config"],
+    "additionalProperties": false,
+    "properties": {
+      "relationship_types": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["name", "maps_to", "from", "to"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {"type": "string"},
+            "maps_to": {"type": "string"},
+            "from": {"type": "string"},
+            "to": {"type": "string"}
+          }
+        }
+      },
+      "implicit_relationships": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["description", "pattern", "edge_name", "maps_to", "cross_dataset", "target_dataset_id"],
+          "additionalProperties": false,
+          "properties": {
+            "description": {"type": "string"},
+            "pattern": {"type": "string"},
+            "edge_name": {"type": "string"},
+            "maps_to": {"type": "string"},
+            "cross_dataset": {"type": "boolean"},
+            "target_dataset_id": {"type": ["string", "null"]}
+          }
+        }
+      },
+      "association_config": {
+        "oneOf": [
+          {"type": "null"},
+          {
+            "type": "object",
+            "required": ["array_field", "edge_name_subfield", "partner_id_subfield", "direction_subfield", "direction_default"],
+            "additionalProperties": false,
+            "properties": {
+              "array_field": {"type": "string"},
+              "edge_name_subfield": {"type": "string"},
+              "partner_id_subfield": {"type": "string"},
+              "direction_subfield": {"type": ["string", "null"]},
+              "direction_default": {"type": "string"}
+            }
+          }
+        ]
+      }
+    }
+  }
+}

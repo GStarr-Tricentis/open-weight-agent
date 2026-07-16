@@ -20,7 +20,8 @@ TASK — return a JSON object with two keys:
 2. "implicit_relationships": foreign key references embedded in record fields (e.g. a field ending in "UniqueId" or "Id" that points to another node).
    Example: {{"description": "test step references a module", "pattern": "step_uses_module", "edge_name": "moduleUniqueId", "maps_to": "USES_MODULE", "cross_dataset": false, "target_dataset_id": null}}
 
-Return ONLY this JSON object — no explanation, no markdown, no extra text:
+Return ONLY this JSON object — no explanation, no markdown, no extra text.
+Always include all three keys: "relationship_types", "implicit_relationships", and "association_config".
 
 {{
   "relationship_types": [
@@ -28,13 +29,7 @@ Return ONLY this JSON object — no explanation, no markdown, no extra text:
   ],
   "implicit_relationships": [
     {{"description": "<what this FK means>", "pattern": "<short_snake_case_name>", "edge_name": "<field name>", "maps_to": "<SCREAMING_SNAKE_CASE>", "cross_dataset": false, "target_dataset_id": null}}
-  ]
-}}
-
----
-ASSOCIATION ARRAY CONFIG — if the data has an explicit list of edges on each record,
-add an "association_config" key to the returned JSON object describing its structure:
-
+  ],
   "association_config": {{
     "array_field": "<field name of the edge list, e.g. 'associations', 'links', 'edges', 'relationships'>",
     "edge_name_subfield": "<field within each edge object that names the relationship type, e.g. 'edgeName', 'rel', 'type'>",
@@ -42,8 +37,9 @@ add an "association_config" key to the returned JSON object describing its struc
     "direction_subfield": "<field encoding edge direction ('in'/'out'), or null if always outbound>",
     "direction_default": "out"
   }}
+}}
 
-Set association_config to null if no such edge array exists in the data.
+Set association_config to null if no explicit edge array exists in the data.
 ---
 
 Rules:

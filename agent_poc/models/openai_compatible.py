@@ -40,6 +40,7 @@ class OpenAICompatibleBackend:
         self,
         messages: list[dict],
         tools: list[RegisteredTool],
+        response_format: dict | None = None,
     ) -> ModelResponse:
         tool_payload = _tools_payload(tools)
         tools_param = tool_payload if tool_payload else openai.NOT_GIVEN
@@ -49,6 +50,7 @@ class OpenAICompatibleBackend:
             messages=messages,
             tools=tools_param,
             temperature=self._temperature,
+            response_format=response_format or openai.NOT_GIVEN,
         )
 
         choice = response.choices[0]

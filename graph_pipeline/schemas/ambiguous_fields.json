@@ -1,0 +1,15 @@
+{
+  "name": "ambiguous_fields_response",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "required": ["fields"],
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "type": "array",
+        "items": {"type": "string"}
+      }
+    }
+  }
+}

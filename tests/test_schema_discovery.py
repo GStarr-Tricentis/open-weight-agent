@@ -18,7 +18,7 @@ class MockBackend:
     def __init__(self, response_content: str):
         self._content = response_content
 
-    def complete(self, messages, tools):
+    def complete(self, messages, tools, response_format=None):
         from agent_poc.agent.types import ModelResponse
         return ModelResponse(
             content=self._content,
@@ -160,12 +160,16 @@ class TestValidateProposedContext:
 
 class TestProposeDatasetContext:
     def _nodes_response(self):
-        node_types = [
-            {"name": "TestCase", "maps_to": "TestCase", "identity_key": "uniqueId"},
-            {"name": "XModule", "maps_to": "XModule", "identity_key": "uniqueId"},
-        ]
-        structural_config = {"id_field": "uniqueId", "type_field": "typeName"}
-        return json.dumps(node_types) + "\n" + json.dumps(structural_config)
+        return json.dumps({
+            "node_types": [
+                {"name": "TestCase", "maps_to": "TestCase", "identity_key": "uniqueId"},
+                {"name": "XModule", "maps_to": "XModule", "identity_key": "uniqueId"},
+            ],
+            "id_field": "uniqueId",
+            "type_field": "typeName",
+            "hierarchy_config": None,
+            "nested_collections": [],
+        })
 
     def _rels_response(self):
         return json.dumps({
@@ -177,7 +181,7 @@ class TestProposeDatasetContext:
         })
 
     def _ambiguous_response(self):
-        return json.dumps([])
+        return json.dumps({"fields": []})
 
     def test_returns_dataset_context(self):
         from graph_pipeline.context_store import DatasetContext, SharedContext
@@ -188,7 +192,7 @@ class TestProposeDatasetContext:
         call_count = [0]
 
         class MultiMockBackend:
-            def complete(self, messages, tools):
+            def complete(self, messages, tools, response_format=None):
                 from agent_poc.agent.types import ModelResponse
                 content = responses[call_count[0]]
                 call_count[0] += 1
@@ -217,7 +221,7 @@ class TestProposeDatasetContext:
         call_count = [0]
 
         class MultiMockBackend:
-            def complete(self, messages, tools):
+            def complete(self, messages, tools, response_format=None):
                 from agent_poc.agent.types import ModelResponse
                 content = responses[call_count[0]]
                 call_count[0] += 1
@@ -246,7 +250,7 @@ class TestProposeDatasetContext:
         call_count = [0]
 
         class MultiMockBackend:
-            def complete(self, messages, tools):
+            def complete(self, messages, tools, response_format=None):
                 from agent_poc.agent.types import ModelResponse
                 content = responses[call_count[0]]
                 call_count[0] += 1

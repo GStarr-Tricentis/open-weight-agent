@@ -57,7 +57,10 @@ response = self._client.chat.completions.create(
 
 **File: `agent_poc/models/tricentis_backend.py`**
 
-Same change — identical one-liner addition.
+Add `response_format: dict | None = None` to `complete()`, `_complete_anthropic()`, and
+`_complete_openai()`. Do not pass it to either the Anthropic or OpenAI SDK calls — the
+Anthropic API does not support `json_schema` mode, and the parameter is accepted for
+interface compatibility only.
 
 ---
 
@@ -195,13 +198,6 @@ Update parsing in `_propose_ambiguous_fields`: read `data["fields"]` instead of 
 `data` as the list directly.
 
 ---
-
-### 1f. Graceful fallback for backends that don't support structured outputs
-
-Not every model or endpoint supports `json_schema` mode. Add a try/except in `_llm_call`:
-if the backend raises an error mentioning `response_format`, log a warning, retry without it,
-and fall back to the current regex parsing path. The pipeline works against any backend while
-getting the benefit where supported.
 
 ---
 

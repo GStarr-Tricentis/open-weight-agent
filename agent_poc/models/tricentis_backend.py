@@ -70,6 +70,7 @@ class TricentisBackend:
         self,
         messages: list[dict],
         tools: list[RegisteredTool],
+        response_format: dict | None = None,
     ) -> ModelResponse:
         if self._is_anthropic:
             return self._complete_anthropic(messages, tools)
@@ -79,6 +80,7 @@ class TricentisBackend:
         self,
         messages: list[dict],
         tools: list[RegisteredTool],
+        response_format: dict | None = None,
     ) -> ModelResponse:
         import asyncio
         import anthropic
@@ -166,6 +168,7 @@ class TricentisBackend:
         self,
         messages: list[dict],
         tools: list[RegisteredTool],
+        response_format: dict | None = None,
     ) -> ModelResponse:
         self._client.api_key = self._fresh_token()
 

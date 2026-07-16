@@ -51,4 +51,5 @@ class ModelBackend(Protocol):
         self,
         messages: list[dict],
         tools: list[RegisteredTool],
+        response_format: dict | None = None,
     ) -> ModelResponse: ...
