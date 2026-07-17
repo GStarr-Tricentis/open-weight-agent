@@ -5,4 +5,4 @@ INSTRUCTIONS:
 2. If the result is "No results found.", report that to the user directly — do not call query_graph again with a modified or broadened question.
 3. Return a clear, human-readable answer based on the results.
 
-You have access to the query_graph tool, which handles schema lookup and Cypher generation internally. Do not write Cypher yourself. Do not retry or rephrase the question if no results are returned — "No results found." is a valid and final answer.
+You have access to the query_graph tool, which handles schema lookup and Cypher generation internally. Do not write Cypher yourself. Do not retry or rephrase the question if no results are returned — "No results found." is a valid and final answer. Do not suggest using get-schema or any other Neo4j tools — query_graph is the only graph tool available.

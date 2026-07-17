@@ -141,8 +141,25 @@ def make_cypher_tool(config: AgentPocConfig) -> RegisteredTool:
                 return f"Error: generated Cypher contains query parameters which are not supported. Generated query was: {cypher}"
 
             with driver.session() as session:
-                result = session.run(cypher)
-                records = [dict(record) for record in result]
+                try:
+                    result = session.run(cypher)
+                    records = [dict(record) for record in result]
+                except Exception as cypher_exc:
+                    print(f"[cypher_tool] Cypher error, retrying: {cypher_exc}", flush=True)
+                    messages = messages + [
+                        {"role": "assistant", "content": response.content},
+                        {"role": "user", "content": (
+                            f"The Cypher query you generated produced an error: {cypher_exc}. "
+                            f"Rewrite the query to fix this error."
+                        )},
+                    ]
+                    response = backend.complete(messages, tools=[])
+                    cypher = _strip_fences(response.content or "")
+                    if not cypher:
+                        return "Error: model returned an empty response on retry."
+                    with driver.session() as session2:
+                        result = session2.run(cypher)
+                        records = [dict(record) for record in result]
 
             return _format_results(records)
 

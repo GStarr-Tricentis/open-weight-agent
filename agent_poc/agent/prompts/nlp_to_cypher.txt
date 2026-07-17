@@ -5,6 +5,7 @@ RULES:
 - Use MATCH only — never MERGE or CREATE
 - Only use node labels and relationship types that appear in the SCHEMA below — never invent or guess labels
 - For "how many" questions, always use count() and return a single number — never return rows and let the caller count them
+- If you use ORDER BY with an aggregation like count(), you must include that aggregation in the RETURN clause first
 - Always LIMIT to 1000 when returning rows — never use LIMIT on aggregations like count()
 - Return specific properties: RETURN n.name, n.id — not RETURN n
 - Always use RETURN DISTINCT when the query uses variable-length paths like [:CONTAINS*] to avoid duplicate rows
