@@ -47,4 +47,4 @@ tricentis:
 cypher_tool:
   provider: local
   model: "${CYPHER_MODEL}"  # e.g. qwen2.5-coder:7b; falls back to model.model_name if unset
-  timeout_seconds: 30
+  timeout_seconds: 120

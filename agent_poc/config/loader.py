@@ -82,7 +82,7 @@ class TricentisConfig(BaseModel):
 class CypherToolConfig(BaseModel):
     provider: str = "local"
     model: str = ""  # falls back to model.model_name if empty
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = 120.0
 
 
 class AgentPocConfig(BaseModel):
