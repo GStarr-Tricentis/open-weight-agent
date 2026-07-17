@@ -20,6 +20,8 @@ def main() -> None:
     parser.add_argument("--config", default="agent_poc/config/config.yaml")
     parser.add_argument("--provider", default="local", choices=["local", "tricentis"],
                         help="Model provider (default: local)")
+    parser.add_argument("--cypher-tool", action="store_true",
+                        help="Use query_graph tool instead of raw Neo4j MCP tools")
     args = parser.parse_args()
 
     from agent_poc.config.loader import load_config, load_dotenv
@@ -42,6 +44,8 @@ def main() -> None:
 
     if MCP_AVAILABLE:
         for srv in config.mcp.servers:
+            if args.cypher_tool and srv.name == "neo4j":
+                continue
             try:
                 adapter = MCPAdapter(srv.name, srv.command, srv.args, srv.expanded_env())
                 adapter.connect()
@@ -51,6 +55,11 @@ def main() -> None:
                 print(f"[mcp] {srv.name} failed to connect: {e}", file=sys.stderr)
     elif config.mcp.servers:
         print("[mcp] Warning: mcp package not installed — Neo4j tools unavailable", file=sys.stderr)
+
+    if args.cypher_tool:
+        from agent_poc.tools.cypher_tool import make_cypher_tool
+        registry.register(make_cypher_tool(config))
+        system_prompt += "\n\nIMPORTANT: Use the query_graph tool for all questions about the graph. Do not write Cypher directly."
 
     from agent_poc.models.factory import make_backend
     backend = make_backend(config, provider=args.provider, model_override=args.model)
