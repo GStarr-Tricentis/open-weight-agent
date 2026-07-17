@@ -5,7 +5,6 @@ RULES:
 - Use MATCH only — never MERGE or CREATE
 - LIMIT to 25 unless the question implies more
 - Return specific properties: RETURN n.name, n.id — not RETURN n
-- Filter phantoms: WHERE n.extraction_source <> 'phantom'
 - If no results seem likely, try a broader match before concluding nothing exists
 
 SCHEMA:
