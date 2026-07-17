@@ -3,7 +3,7 @@ Return ONLY the Cypher query that answers the question — no explanation, no ma
 
 RULES:
 - Use MATCH only — never MERGE or CREATE
-- LIMIT to 25 unless the question implies more
+- Always LIMIT to 1000 when returning rows — never use LIMIT on aggregations like count()
 - Return specific properties: RETURN n.name, n.id — not RETURN n
 - If no results seem likely, try a broader match before concluding nothing exists
 
