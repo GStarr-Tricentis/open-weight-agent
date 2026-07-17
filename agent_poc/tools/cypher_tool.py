@@ -74,6 +74,7 @@ def _format_results(records: list[dict]) -> str:
 def make_cypher_tool(config: AgentPocConfig) -> RegisteredTool:
     def _query_graph(args: dict) -> str:
         question: str = args["question"]
+        print(f"[cypher_tool] question received: {question!r}", flush=True)
         driver = None
         try:
             from neo4j import GraphDatabase
