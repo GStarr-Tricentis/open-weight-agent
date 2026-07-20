@@ -24,4 +24,20 @@ def make_backend(
                 "Set tricentis.deployment in config.yaml or pass --model."
             )
         return TricentisBackend(deployment=deployment, temperature=config.model.temperature)
-    raise ValueError(f"Unknown provider: {provider!r}. Valid options: local, tricentis")
+    if provider == "bedrock":
+        from agent_poc.models.bedrock_backend import BedrockBackend
+        model_id = model_override or config.bedrock.model_id
+        if not model_id:
+            raise ValueError(
+                "Bedrock provider requires a model_id. "
+                "Pass --model or set bedrock.model_id in config.yaml."
+            )
+        region = config.bedrock.region
+        if region.startswith("${"):
+            region = "us-east-1"
+        return BedrockBackend(
+            model_id=model_id,
+            region=region,
+            temperature=config.model.temperature,
+        )
+    raise ValueError(f"Unknown provider: {provider!r}. Valid options: local, tricentis, bedrock")

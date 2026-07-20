@@ -186,6 +186,14 @@ class TricentisBackend:
             assistant_message=assistant_message,
         )
 
+    def _reauthenticate(self) -> None:
+        # Force re-auth: clear cached token so ensure_authenticated doesn't skip the flow
+        store = getattr(self._tais_client.token_provider, "_store", None)
+        if store is not None:
+            store.clear()
+        asyncio.run(self._tais_client.authenticate())
+        self._client.api_key = self._fresh_token()
+
     def _complete_openai(
         self,
         messages: list[dict],
@@ -197,12 +205,21 @@ class TricentisBackend:
         tool_payload = _tools_payload(tools)
         tools_param = tool_payload if tool_payload else openai.NOT_GIVEN
 
-        response = self._client.chat.completions.create(
-            model=self._deployment,
-            messages=messages,
-            tools=tools_param,
-            temperature=self._temperature,
-        )
+        try:
+            response = self._client.chat.completions.create(
+                model=self._deployment,
+                messages=messages,
+                tools=tools_param,
+                temperature=self._temperature,
+            )
+        except (openai.AuthenticationError, openai.PermissionDeniedError):
+            self._reauthenticate()
+            response = self._client.chat.completions.create(
+                model=self._deployment,
+                messages=messages,
+                tools=tools_param,
+                temperature=self._temperature,
+            )
 
         choice = response.choices[0]
         message = choice.message

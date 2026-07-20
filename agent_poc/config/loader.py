@@ -79,6 +79,11 @@ class TricentisConfig(BaseModel):
     deployment: str = ""  # model deployment name; override with --model flag
 
 
+class BedrockConfig(BaseModel):
+    region: str = "us-east-1"
+    model_id: str = ""  # overridable at runtime via --model
+
+
 class CypherToolConfig(BaseModel):
     provider: str = "local"
     model: str = ""  # falls back to model.model_name if empty
@@ -94,6 +99,7 @@ class AgentPocConfig(BaseModel):
     graph_pipeline: GraphPipelineConfig = GraphPipelineConfig()
     tricentis: TricentisConfig = TricentisConfig()
     cypher_tool: CypherToolConfig = CypherToolConfig()
+    bedrock: BedrockConfig = BedrockConfig()
 
 
 def _expand_env_in_raw(obj):

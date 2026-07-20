@@ -27,6 +27,9 @@ tricentis = [
     "anthropic>=0.40",
     "httpx>=0.27",
 ]
+bedrock = [
+    "boto3>=1.34",
+]
 dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.0",
@@ -34,6 +37,9 @@ dev = [
 
 [project.scripts]
 agent-poc = "main:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["agent_poc", "graph_pipeline"]

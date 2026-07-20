@@ -33,6 +33,11 @@ from ui.config import CONFIG_PATH, get_ollama_models
 CONFIG_YAML_PATH = "agent_poc/config/config.yaml"
 _PROMPT_DIR = Path("agent_poc/agent/prompts")
 
+BEDROCK_MODEL_IDS = [
+    "qwen.qwen3-coder-next",
+    "deepseek.r1-v1:0",
+]
+
 TRICENTIS_DEPLOYMENTS = [
     "anthropic.claude-sonnet-4-6",
     "anthropic.claude-opus-4-6-v1",
@@ -114,6 +119,8 @@ if "provider" not in st.session_state:
     st.session_state.provider = "local"
 if "tricentis_deployment" not in st.session_state:
     st.session_state.tricentis_deployment = ""
+if "bedrock_model_id" not in st.session_state:
+    st.session_state.bedrock_model_id = BEDROCK_MODEL_IDS[0]
 if "cypher_tool_enabled" not in st.session_state:
     st.session_state.cypher_tool_enabled = False
 
@@ -137,8 +144,8 @@ with chat_tab:
     with top_cols[0]:
         st.session_state.provider = st.radio(
             "Provider",
-            ["local", "tricentis"],
-            index=["local", "tricentis"].index(st.session_state.provider),
+            ["local", "tricentis", "bedrock"],
+            index=["local", "tricentis", "bedrock"].index(st.session_state.provider),
             horizontal=True,
             label_visibility="collapsed",
         )
@@ -153,13 +160,20 @@ with chat_tab:
                 index=models.index(st.session_state.selected_model) if st.session_state.selected_model in models else 0,
                 label_visibility="collapsed",
             )
-        else:
+        elif st.session_state.provider == "tricentis":
             if st.session_state.tricentis_deployment not in TRICENTIS_DEPLOYMENTS:
                 st.session_state.tricentis_deployment = TRICENTIS_DEPLOYMENTS[0]
             st.session_state.tricentis_deployment = st.selectbox(
                 "Deployment",
                 options=TRICENTIS_DEPLOYMENTS,
                 index=TRICENTIS_DEPLOYMENTS.index(st.session_state.tricentis_deployment),
+                label_visibility="collapsed",
+            )
+        else:
+            st.session_state.bedrock_model_id = st.selectbox(
+                "Model",
+                options=BEDROCK_MODEL_IDS,
+                index=BEDROCK_MODEL_IDS.index(st.session_state.bedrock_model_id),
                 label_visibility="collapsed",
             )
 
@@ -177,6 +191,12 @@ with chat_tab:
             "If authentication is required, an SSO link will appear in the terminal "
             "where you launched Streamlit. Complete sign-in there, then retry your message.",
             icon="ℹ️",
+        )
+    elif st.session_state.provider == "bedrock" and not __import__("os").environ.get("AWS_ACCESS_KEY_ID"):
+        st.warning(
+            "AWS_ACCESS_KEY_ID is not set. Ensure your AWS credentials are configured "
+            "before sending a message.",
+            icon="⚠️",
         )
 
     chat_col, tool_col = st.columns([7, 3])
@@ -206,8 +226,10 @@ with chat_tab:
 
             if provider == "local":
                 model_override = st.session_state.selected_model
-            else:
+            elif provider == "tricentis":
                 model_override = st.session_state.tricentis_deployment or None
+            else:  # bedrock
+                model_override = st.session_state.bedrock_model_id
 
             system_prompt = _system_prompt(cypher_on)
             registry = _build_registry(config, skip_neo4j=cypher_on)
@@ -285,7 +307,7 @@ with benchmark_tab:
 
     uploaded = st.file_uploader("Queries CSV", type="csv")
 
-    bench_provider = st.radio("Provider", ["local", "tricentis"], horizontal=True, key="bench_provider")
+    bench_provider = st.radio("Provider", ["local", "tricentis", "bedrock"], horizontal=True, key="bench_provider")
 
     if bench_provider == "local":
         bench_models = st.multiselect(
@@ -294,18 +316,28 @@ with benchmark_tab:
             default=get_ollama_models()[:1],
         )
         bench_deployment = ""
-    else:
+        bench_bedrock_model = ""
+    elif bench_provider == "tricentis":
         bench_models = []
         bench_deployment = st.selectbox(
             "Deployment",
             options=TRICENTIS_DEPLOYMENTS,
             key="bench_deployment",
         )
+        bench_bedrock_model = ""
+    else:  # bedrock
+        bench_models = []
+        bench_deployment = ""
+        bench_bedrock_model = st.selectbox(
+            "Model",
+            options=BEDROCK_MODEL_IDS,
+            key="bench_bedrock_model",
+        )
 
     bench_cypher_tool = st.checkbox("Cypher tool", key="bench_cypher_tool")
     reps = st.number_input("Repetitions per run", min_value=1, max_value=10, value=3)
 
-    run_ready = uploaded and (bench_models if bench_provider == "local" else bench_deployment)
+    run_ready = uploaded and (bench_models if bench_provider == "local" else (bench_deployment or bench_bedrock_model))
 
     if st.button("Run Benchmark") and run_ready:
         queries_df = pd.read_csv(uploaded)
@@ -319,8 +351,13 @@ with benchmark_tab:
         rows: list[dict] = []
         run_id = 0
 
-        # For local: iterate over selected models. For tricentis: single "model" = deployment.
-        model_list = bench_models if bench_provider == "local" else [bench_deployment]
+        # For local: iterate over selected models. For tricentis/bedrock: single model.
+        if bench_provider == "local":
+            model_list = bench_models
+        elif bench_provider == "tricentis":
+            model_list = [bench_deployment]
+        else:  # bedrock
+            model_list = [bench_bedrock_model]
 
         with st.spinner("Running benchmarks…"):
             for model in model_list:
@@ -328,7 +365,7 @@ with benchmark_tab:
                     config.model.model_name = model
                     model_override = model
                 else:
-                    model_override = model  # deployment string
+                    model_override = model  # deployment or bedrock model id
 
                 registry = _build_registry(config, skip_neo4j=bench_cypher_tool)
 
