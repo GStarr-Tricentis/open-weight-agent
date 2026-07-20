@@ -98,8 +98,8 @@ def _system_prompt(graph_mode: str) -> str:
 # Page setup
 # ---------------------------------------------------------------------------
 
-st.set_page_config(page_title="Open-weight Agent", layout="wide")
-st.title("Open-weight Agent")
+st.set_page_config(page_title="kgent", layout="wide")
+st.title("kgent")
 
 # ---------------------------------------------------------------------------
 # Session state initialisation
