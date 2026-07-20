@@ -1,6 +1,6 @@
 # open-weight-agent
 
-A synchronous tool-using agent that runs against any OpenAI-compatible local model server (Ollama, llama.cpp, vLLM, etc.).
+A synchronous tool-using agent that runs against any OpenAI-compatible local model server (Ollama, llama.cpp, vLLM, etc.), the Tricentis AI Service (TAIS) cloud, or AWS Bedrock.
 
 ## Prerequisites
 
@@ -13,6 +13,11 @@ A synchronous tool-using agent that runs against any OpenAI-compatible local mod
 - Python 3.11+
 - Access to a TAIS tenant — set `TAIS_GATEWAY_URL`, `TAIS_TENANT_NAME`, `TAIS_PRODUCT_NAME`, `KB_NODE_ID`, and `TAIS_LLM_DEPLOYMENT` in `.env`
 - First run triggers a browser device flow login; subsequent runs use the cached token at `./data/tokens.json`
+
+**AWS Bedrock provider:**
+- Python 3.11+
+- AWS credentials with Bedrock access — set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN` (for temporary credentials) in `.env`
+- Models must be enabled in your AWS account via the Bedrock console under **Model access**
 
 ## Install
 
@@ -33,6 +38,9 @@ pip install -e ".[dev,mcp]"
 git submodule update --init                                              # pull tricentis-ai-client
 uv pip install --override-requires-python ">=3.11" -e "./tricentis-ai-client[openai]"
 pip install -e ".[tricentis]"
+
+# With AWS Bedrock backend
+pip install -e ".[bedrock]"
 ```
 
 > **Note:** `tricentis-ai-client` declares `requires-python = ">=3.13"` but runs fine on 3.11.
@@ -128,6 +136,12 @@ python scripts/query.py --provider tricentis --question "how many test cases are
 python scripts/ingest.py --file data.jsonl --provider tricentis
 ```
 
+Use AWS Bedrock (set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `.env` first):
+```bash
+python main.py --provider bedrock --model qwen.qwen3-coder-next --prompt "list the files in the current directory"
+python main.py --provider bedrock --model deepseek.r1-v1:0 --prompt "hello"
+```
+
 ## The four demos
 
 ### Demo 1 — File Q&A
@@ -171,7 +185,7 @@ Agent reads the file, recognises the format, writes a parser with `python_exec`,
 
 ```yaml
 model:
-  provider: local           # "local" for Ollama/llama.cpp/vLLM; "tricentis" for Tricentis cloud
+  provider: local           # "local" | "tricentis" | "bedrock"
   base_url: http://localhost:11434/v1
   api_key: ollama           # required by OpenAI SDK; value ignored by Ollama
   model_name: qwen2.5:7b
@@ -195,7 +209,20 @@ sandbox:
   timeout_seconds: 15       # python_exec subprocess timeout
   max_output_bytes: 65536   # truncate output above this size
   allow_network: false      # informational (not enforced on macOS)
+
+bedrock:
+  region: "${AWS_REGION}"   # falls back to us-east-1 if unset
+  model_id: ""              # default model; overridden by --model or UI selector
 ```
+
+### Bedrock available models
+
+| Model | Bedrock ID |
+|---|---|
+| Qwen3 Coder | `qwen.qwen3-coder-next` |
+| DeepSeek R1 | `deepseek.r1-v1:0` |
+
+Models must be enabled in your AWS account under **Bedrock → Model access** before use.
 
 ## Graph Pipeline
 
